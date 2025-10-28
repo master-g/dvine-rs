@@ -9,6 +9,8 @@ rustdoc-args = ["-Zunstable-options", "--generate-link-to-definition"]
 all-features = true
 
 [dependencies]
+dvine_types = { path = "../dvine_types" }
+dvine_vfs = { path = "../dvine_vfs" }
 
 [lints]
 workspace = true

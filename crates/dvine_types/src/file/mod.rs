@@ -1,0 +1,16 @@
+//! File type support for `dvine-rs` project.
+
+mod error;
+
+pub mod dsk;
+pub mod pft;
+
+/// Block size used in DSK files (2048 bytes / 0x0800)
+pub const BLOCK_SIZE: usize = 0x0800;
+
+// Re-export error types
+pub use error::{DskError, PftError};
+
+// Re-export main file types
+pub use dsk::File as DskFile;
+pub use pft::{Entry, File as PftFile, Header as PftHeader};

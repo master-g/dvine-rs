@@ -11,8 +11,8 @@ keywords = ["game"]
 exclude = [".github/", "crates/"]
 resolver = "3"
 
-[package.metadata.example.model_loader]
-hidden = true
+[package.metadata.docs.rs]
+rustdoc-args = ["--html-in-header", "doc-assets/header.html"]
 
 [workspace]
 members = ["crates/*"]

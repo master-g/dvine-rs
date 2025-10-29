@@ -16,7 +16,7 @@
 /.cargo
 /temp
 /.data
+/bin
 
 # Environment
 .env
-

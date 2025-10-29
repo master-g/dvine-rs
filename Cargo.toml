@@ -34,6 +34,7 @@ clap = { version = "4.5.50", features = [
 ] }
 config = { version = "0.15.18", features = ["toml"] }
 env_logger = "0.11.8"
+log = "0.4"
 md-5 = "0.10.6"
 rand = { version = "0.9.2", features = ["os_rng", "small_rng"] }
 regex = "1.12.2"
@@ -64,6 +65,8 @@ unsafe_op_in_unsafe_fn = "warn"
 
 [dependencies]
 dvine_internal = { path = "crates/dvine_internal" }
+log = { workspace = true }
+env_logger = { workspace = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 dvine_dylib = { path = "crates/dvine_dylib", optional = true }
@@ -73,6 +76,10 @@ dynamic_linking = ["dep:dvine_dylib"]
 
 [lints]
 workspace = true
+
+[[example]]
+name = "file-types"
+path = "tests/file_types/main.rs"
 
 # bin
 [profile.release]

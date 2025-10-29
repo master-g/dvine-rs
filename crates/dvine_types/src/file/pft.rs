@@ -3,11 +3,14 @@
 //! PFT files contain metadata for files stored in DSK containers,
 //! including file names, block indices, and sizes.
 
-use std::io::{self, Read};
+use std::{
+	fmt::Formatter,
+	io::{self, Read},
+};
 
 use super::{BLOCK_SIZE, error::PftError};
 
-const MAGIC: [u8; 4] = [0x10, 0x00, 0x00, 0x80];
+const MAGIC: [u8; 4] = [0x10, 0x00, 0x00, 0x08];
 const HEADER_SIZE: usize = 16;
 
 /// PFT File Header
@@ -84,6 +87,12 @@ impl Default for Header {
 			num_entries: 0,
 			padding: 0,
 		}
+	}
+}
+
+impl std::fmt::Display for Header {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		write!(f, "PFT {{ magic: {:02X?}, num_entries: {} }}", self.magic, self.num_entries)
 	}
 }
 
@@ -241,6 +250,18 @@ impl Entry {
 	}
 }
 
+impl std::fmt::Display for Entry {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"Entry {{ name: '{}', index: {}, actual_size: {} }}",
+			self.name(),
+			self.index,
+			self.actual_size
+		)
+	}
+}
+
 impl TryFrom<&[u8]> for Entry {
 	type Error = PftError;
 
@@ -332,6 +353,14 @@ impl File {
 		}
 	}
 
+	/// Opens a PFT file from any reader
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, PftError> {
+		let mut file = std::fs::File::open(path)?;
+		let pft = Self::from_reader(&mut file)?;
+		pft.validate()?;
+		Ok(pft)
+	}
+
 	/// Returns a reference to the header
 	pub fn header(&self) -> &Header {
 		&self.header
@@ -354,7 +383,7 @@ impl File {
 
 	/// Finds an entry by name
 	pub fn find_entry(&self, name: &str) -> Option<&Entry> {
-		self.entries.iter().find(|e| e.name() == name)
+		self.entries.iter().find(|e| e.name().eq_ignore_ascii_case(name))
 	}
 
 	/// Adds an entry to the file
@@ -444,6 +473,16 @@ impl File {
 impl Default for File {
 	fn default() -> Self {
 		Self::empty()
+	}
+}
+
+impl std::fmt::Display for File {
+	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+		write!(f, "PFT File: {}\nEntries:\n", self.header)?;
+		for entry in &self.entries {
+			writeln!(f, "  {}", entry)?;
+		}
+		Ok(())
 	}
 }
 

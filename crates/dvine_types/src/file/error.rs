@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur when parsing or manipulating PFT files
-#[derive(Debug, Error, Clone, Copy)]
+#[derive(Debug, Error)]
 pub enum PftError {
 	/// Not enough data to parse
 	#[error("Insufficient data: expected {expected} bytes, got {actual} bytes")]
@@ -26,10 +26,14 @@ pub enum PftError {
 		/// Actual number of entries
 		actual: usize,
 	},
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
 }
 
 /// Errors that can occur when parsing or manipulating DSK files
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error)]
 pub enum DskError {
 	/// Not enough data
 	#[error("Insufficient data: expected at least {expected} bytes, got {actual} bytes")]
@@ -72,4 +76,12 @@ pub enum DskError {
 		/// Number of blocks available
 		blocks_available: usize,
 	},
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+
+	/// Invalid PFT
+	#[error(transparent)]
+	PFTError(#[from] PftError),
 }

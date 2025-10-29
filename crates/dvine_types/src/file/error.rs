@@ -85,3 +85,32 @@ pub enum DskError {
 	#[error(transparent)]
 	PFTError(#[from] PftError),
 }
+
+/// Errors that can occur when parsing or manipulating Startup INI files
+#[derive(Debug, Error)]
+pub enum StartupIniError {
+	/// Not enough data to parse
+	#[error("Insufficient data: expected {expected} bytes, got {actual} bytes")]
+	InsufficientData {
+		/// Expected number of bytes
+		expected: usize,
+		/// Actual number of bytes
+		actual: usize,
+	},
+
+	/// Invalid opening mode value
+	#[error("Invalid opening mode value: {0}")]
+	InvalidOpeningMode(u8),
+
+	/// Invalid VGA mode value
+	#[error("Invalid VGA mode value: {0}")]
+	InvalidVgaMode(u8),
+
+	/// Invalid render mode value
+	#[error("Invalid render mode value: {0}")]
+	InvalidRenderMode(u32),
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+}

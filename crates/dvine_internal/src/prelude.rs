@@ -14,7 +14,8 @@
 
 #[doc(inline)]
 pub use crate::dvine_types::file::{
-	BLOCK_SIZE, DskError, DskFile, Entry, PftError, PftFile, PftHeader,
+	BLOCK_SIZE, DskError, DskFile, Entry, PftError, PftFile, PftHeader, StartupIni,
+	StartupOpeningMode, StartupRenderMode, StartupVgaMode,
 };
 
 // Re-export the entire file module for advanced usage

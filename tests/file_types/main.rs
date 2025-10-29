@@ -1,38 +1,14 @@
 //! Test file types for `dvine-rs`
 
-use dvine_rs::DskFile;
-use log::{error, info};
+use crate::startup_cfg::check_startup_cfg;
+
+mod extract;
+mod startup_cfg;
 
 fn main() {
 	// Initialize logger with default level set to info if RUST_LOG is not set
 	env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
-	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-	let bin_root = std::path::Path::new(&cargo_root).join("bin");
-
-	// load pft/dsk files
-	let mut cha = DskFile::open(&bin_root, "spr")
-		.inspect_err(|e| {
-			error!("Cannot open DSK file: {}", e);
-		})
-		.unwrap();
-
-	// Iterate over all files
-	info!("\nIterating over all files:");
-	for (idx, result) in cha.iter().enumerate() {
-		match result {
-			Ok((entry, data)) => {
-				info!("  [{}] {}: {} bytes", idx, entry.name(), data.len());
-				let output_path = bin_root.join("extract").join(entry.name());
-				let parent_dir = output_path.parent().unwrap();
-				std::fs::create_dir_all(parent_dir).unwrap();
-				std::fs::write(&output_path, &data).unwrap();
-			}
-			Err(e) => {
-				error!("  [{}] Failed to extract: {}", idx, e);
-			}
-		}
-	}
-
-	info!("\nDone!");
+	// extract_pft_dsk();
+	check_startup_cfg();
 }

@@ -174,6 +174,39 @@ impl GlyphBitmap {
 
 		art
 	}
+
+	/// Returns an iterator over the lines of the glyph bitmap.
+	pub fn line_iterator(&'_ self) -> GlyphBitmapLineIterator<'_> {
+		GlyphBitmapLineIterator {
+			bitmap: self,
+			current_line: 0,
+		}
+	}
+}
+
+/// Returns an iterator over the lines of the glyph bitmap.
+#[derive(Debug, Clone)]
+pub struct GlyphBitmapLineIterator<'a> {
+	bitmap: &'a GlyphBitmap,
+	current_line: usize,
+}
+
+impl<'a> Iterator for GlyphBitmapLineIterator<'a> {
+	type Item = Vec<bool>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let n = self.bitmap.font_size() as usize;
+		if self.current_line >= n {
+			return None;
+		}
+
+		let start_index = self.current_line * n;
+		let end_index = start_index + n;
+		let line: Vec<bool> = self.bitmap.pixels[start_index..end_index].to_vec();
+
+		self.current_line += 1;
+		Some(line)
+	}
 }
 
 impl From<&Glyph> for GlyphBitmap {

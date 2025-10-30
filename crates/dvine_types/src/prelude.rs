@@ -45,7 +45,7 @@ pub use crate::file::{
 pub use crate::file::fnt::{FontSize, GlyphIter};
 
 #[doc(inline)]
-pub use crate::file::fnt::glyph::{Glyph, GlyphBitmap};
+pub use crate::file::fnt::glyph::{Glyph, GlyphBitmap, GlyphBitmapLineIterator};
 
 // Re-export the file module for advanced usage
 #[doc(inline)]

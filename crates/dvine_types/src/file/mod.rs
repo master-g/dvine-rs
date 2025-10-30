@@ -15,7 +15,10 @@ pub use error::{DskError, FntError, PftError};
 
 // Re-export main file types
 pub use dsk::File as DskFile;
-pub use fnt::{File as FntFile, FontSize, GlyphIter, glyph::Glyph, glyph::GlyphBitmap};
+pub use fnt::{
+	File as FntFile, FontSize, GlyphIter, glyph::Glyph, glyph::GlyphBitmap,
+	glyph::GlyphBitmapLineIterator,
+};
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,

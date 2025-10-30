@@ -151,3 +151,38 @@ pub enum FntError {
 	#[error(transparent)]
 	IOError(#[from] std::io::Error),
 }
+
+/// Errors that can occur when parsing or manipulating ITEM files
+#[derive(Debug, Error)]
+pub enum ItemError {
+	/// Not enough data to parse
+	#[error("Insufficient data: expected {expected} bytes, got {actual} bytes")]
+	InsufficientData {
+		/// Expected number of bytes
+		expected: usize,
+		/// Actual number of bytes
+		actual: usize,
+	},
+
+	/// Checksum mismatch
+	#[error("Checksum mismatch: expected {expected:08X}, got {actual:08X}")]
+	ChecksumMismatch {
+		/// Expected checksum value
+		expected: u32,
+		/// Actual calculated checksum
+		actual: u32,
+	},
+
+	/// Invalid record count
+	#[error("Invalid record count: {total_bytes} bytes is not a multiple of {record_size}")]
+	InvalidRecordCount {
+		/// Total bytes in the data section
+		total_bytes: usize,
+		/// Size of each record
+		record_size: usize,
+	},
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+}

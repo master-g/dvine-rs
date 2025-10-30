@@ -12,7 +12,7 @@ pub mod startup_ini;
 pub const BLOCK_SIZE: usize = 0x0800;
 
 // Re-export error types
-pub use error::{DskError, FntError, PftError};
+pub use error::{DskError, FntError, ItemError, PftError};
 
 // Re-export main file types
 pub use dsk::File as DskFile;
@@ -20,6 +20,7 @@ pub use fnt::{
 	File as FntFile, FontSize, GlyphIter, glyph::Glyph, glyph::GlyphBitmap,
 	glyph::GlyphBitmapLineIterator,
 };
+pub use item::{File as ItemFile, Item};
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,

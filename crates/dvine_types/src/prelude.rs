@@ -4,13 +4,12 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```no_run
 //! use dvine_types::prelude::*;
 //!
 //! // Now you can use all common types directly
-//! let dsk = DskFile::new();
-//! let pft = PftFile::empty();
 //! let font = FntFile::new(FontSize::FS16x16);
+//! let mut items = ItemFile::new();
 //! ```
 
 // File module types
@@ -27,6 +26,11 @@ pub use crate::file::{
 
 	// FNT types
 	FntFile,
+
+	// Item types
+	Item,
+	ItemError,
+	ItemFile,
 	PftError,
 
 	// PFT types

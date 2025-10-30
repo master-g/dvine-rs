@@ -293,10 +293,10 @@ impl File {
 			return None; // Glyph not present
 		}
 
-		// Calculate actual byte offset: (offset_multiplier - 1) * bytes_per_glyph
-		// Note: offset is 1-based in the file format
+		// Calculate actual byte offset: offset_multiplier * bytes_per_glyph
+		// Note: The assembly code directly multiplies the offset value without subtracting 1
 		let bytes_per_glyph = self.bytes_per_glyph();
-		let start = (offset_multiplier - 1) * bytes_per_glyph;
+		let start = offset_multiplier * bytes_per_glyph;
 		let end = start + bytes_per_glyph;
 
 		if end > self.raw.len() {
@@ -443,13 +443,24 @@ impl File {
 
 		if offset_multiplier != 0 {
 			// Overwrite existing glyph data
-			let start = (offset_multiplier as usize - 1) * bytes_per_glyph;
+			let start = (offset_multiplier as usize) * bytes_per_glyph;
 			let end = start + bytes_per_glyph;
 			self.raw[start..end].copy_from_slice(glyph.data());
 		} else {
 			// Insert new glyph at the end
-			// Calculate new offset multiplier (1-based, so add 1)
-			let new_offset_multiplier = (self.raw.len() / bytes_per_glyph + 1) as u16;
+			// Note: Offset 0 is reserved for "no glyph", valid offsets start from 1
+			// The offset value N points to byte position N * bytes_per_glyph
+			// This means offset 1 → byte 32, offset 2 → byte 64, etc.
+			// The first 32 bytes (glyph slot 0) are padding/unused
+
+			// If this is the very first glyph, add padding first
+			if self.raw.is_empty() {
+				self.raw.extend_from_slice(&vec![0u8; bytes_per_glyph]);
+			}
+
+			// Calculate new offset: current number of glyph slots in raw data
+			// raw.len() / bytes_per_glyph gives us the next available slot number
+			let new_offset_multiplier = (self.raw.len() / bytes_per_glyph) as u16;
 			self.raw.extend_from_slice(glyph.data());
 			self.offsets[index] = new_offset_multiplier;
 		}

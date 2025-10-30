@@ -1,6 +1,6 @@
 //! Font file type support for `dvine-rs` project.
 //!
-//! This module provides support for loading and manipulating font files used in the D+VINE[LUV]
+//! This module provides support for loading and manipulating font files used in the `D+VINE[LUV]`
 //! visual novel engine. The font files use a custom format with Shift-JIS character encoding.
 //!
 //! # Shift-JIS Encoding

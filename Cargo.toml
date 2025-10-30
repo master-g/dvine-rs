@@ -80,6 +80,7 @@ workspace = true
 
 [dev-dependencies]
 encoding_rs = { workspace = true }
+image = "0.25"
 
 [[example]]
 name = "file-types"

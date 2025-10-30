@@ -10,5 +10,6 @@ fn main() {
 
 	// extract_pft_dsk();
 	// check_startup_cfg();
-	font::test_fonts();
+	// font::test_fonts();
+	font::test_render_to_bitmap();
 }

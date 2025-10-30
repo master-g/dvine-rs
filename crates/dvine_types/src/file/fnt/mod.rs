@@ -1,4 +1,70 @@
 //! Font file type support for `dvine-rs` project.
+//!
+//! This module provides support for loading and manipulating font files used in the D+VINE[LUV]
+//! visual novel engine. The font files use a custom format with Shift-JIS character encoding.
+//!
+//! # Shift-JIS Encoding
+//!
+//! Shift-JIS is a variable-length character encoding for Japanese text:
+//! - **Single-byte characters (1 byte):**
+//!   - `0x00-0x7F`: ASCII characters
+//!   - `0xA1-0xDF`: Half-width katakana
+//! - **Double-byte characters (2 bytes):**
+//!   - First byte: `0x81-0x9F` or `0xE0-0xFC`
+//!   - Second byte: `0x40-0x7E` or `0x80-0xFC`
+//!
+//! # Usage Examples
+//!
+//! ## Basic Character Lookup
+//!
+//! ```no_run
+//! use dvine_types::file::fnt::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let font = File::open("SYSTEM.FNT")?;
+//!
+//! // Lookup by pre-combined character code
+//! let glyph_a = font.lookup(0x0041); // ASCII 'A'
+//! let glyph_hiragana = font.lookup(0x82A0); // Hiragana 'あ'
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Lookup from Shift-JIS Bytes
+//!
+//! ```no_run
+//! use dvine_types::file::fnt::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let font = File::open("SYSTEM.FNT")?;
+//!
+//! // Single-byte character
+//! let (glyph, consumed) = font.lookup_from_bytes(b"A");
+//! assert_eq!(consumed, 1);
+//!
+//! // Double-byte character (あ = 0x82 0xA0 in Shift-JIS)
+//! let (glyph, consumed) = font.lookup_from_bytes(&[0x82, 0xA0]);
+//! assert_eq!(consumed, 2);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Lookup from Byte Stream
+//!
+//! ```no_run
+//! use dvine_types::file::fnt::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let font = File::open("SYSTEM.FNT")?;
+//!
+//! // Mixed ASCII and Japanese text in Shift-JIS encoding
+//! let bytes = b"Hello\x82\xa0"; // "Helloあ"
+//! let glyphs = font.lookup_from_stream(bytes);
+//!
+//! println!("Found {} glyphs", glyphs.len());
+//! # Ok(())
+//! # }
+//! ```
 
 use std::fmt::Display;
 
@@ -239,6 +305,97 @@ impl File {
 
 		let data = self.raw[start..end].to_vec();
 		Some(Glyph::new(self.font_size, code, data))
+	}
+
+	/// Looks up a glyph from Shift-JIS encoded bytes.
+	///
+	/// # Arguments
+	///
+	/// * `bytes` - Shift-JIS encoded bytes (1 or 2 bytes)
+	///
+	/// # Returns
+	///
+	/// A tuple of `(Option<Glyph>, usize)` where:
+	/// - The `Option<Glyph>` is the found glyph (or None if not found)
+	/// - The `usize` is the number of bytes consumed (1 or 2)
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// # use dvine_types::file::fnt::{File, FontSize};
+	/// # let font = File::new(FontSize::FS16x16);
+	/// // Single-byte ASCII character
+	/// let (glyph, consumed) = font.lookup_from_bytes(b"A");
+	/// assert_eq!(consumed, 1);
+	///
+	/// // Double-byte Japanese character (あ = 0x82 0xA0)
+	/// let (glyph, consumed) = font.lookup_from_bytes(&[0x82, 0xA0]);
+	/// assert_eq!(consumed, 2);
+	/// ```
+	pub fn lookup_from_bytes(&self, bytes: &[u8]) -> (Option<Glyph>, usize) {
+		if bytes.is_empty() {
+			return (None, 0);
+		}
+
+		let first_byte = bytes[0];
+
+		// Determine if this is a single-byte or double-byte character
+		// Shift-JIS single-byte ranges:
+		// - 0x00-0x7F: ASCII
+		// - 0xA1-0xDF: Half-width katakana
+		// Double-byte first byte ranges:
+		// - 0x81-0x9F, 0xE0-0xFC
+		let (code, bytes_consumed) = if first_byte < 0x80 || (0xA1..=0xDF).contains(&first_byte) {
+			// Single-byte character
+			(first_byte as u16, 1)
+		} else if bytes.len() >= 2 {
+			// Double-byte character
+			// Combine bytes in big-endian order (high byte first)
+			let code = u16::from_be_bytes([bytes[0], bytes[1]]);
+			(code, 2)
+		} else {
+			// Incomplete double-byte sequence
+			return (None, 1);
+		};
+
+		(self.lookup(code), bytes_consumed)
+	}
+
+	/// Looks up multiple glyphs from a Shift-JIS encoded byte stream.
+	///
+	/// # Arguments
+	///
+	/// * `bytes` - Shift-JIS encoded byte stream
+	///
+	/// # Returns
+	///
+	/// A vector of glyphs found in the byte stream. Missing glyphs are skipped.
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// # use dvine_types::file::fnt::{File, FontSize};
+	/// # let font = File::new(FontSize::FS16x16);
+	/// // Lookup glyphs from mixed ASCII and Japanese text
+	/// let bytes = b"Hello\x82\xa0"; // "Helloあ" in Shift-JIS
+	/// let glyphs = font.lookup_from_stream(bytes);
+	/// ```
+	pub fn lookup_from_stream(&self, bytes: &[u8]) -> Vec<Glyph> {
+		let mut glyphs = Vec::new();
+		let mut i = 0;
+
+		while i < bytes.len() {
+			let (glyph, consumed) = self.lookup_from_bytes(&bytes[i..]);
+			if consumed == 0 {
+				break; // Avoid infinite loop
+			}
+			if let Some(g) = glyph {
+				glyphs.push(g);
+			}
+			i += consumed;
+		}
+
+		glyphs
 	}
 
 	/// Inserts a glyph into the font file.
@@ -679,5 +836,136 @@ mod tests {
 		let fw_space = font.lookup(0x8140);
 		// Don't assert existence, just verify no crash
 		println!("Full-width space lookup: {:?}", fw_space.is_some());
+	}
+
+	#[test]
+	fn test_lookup_from_bytes_single_byte() {
+		let mut font = File::new(FontSize::FS16x16);
+
+		// Insert ASCII 'A'
+		let data = vec![0xAA; 32];
+		let glyph = Glyph::new(FontSize::FS16x16, 0x0041, data.clone());
+		font.insert(&glyph, false).unwrap();
+
+		// Test lookup from single byte
+		let (result, consumed) = font.lookup_from_bytes(b"A");
+		assert_eq!(consumed, 1);
+		assert!(result.is_some());
+		assert_eq!(result.unwrap().code(), 0x0041);
+
+		// Test half-width katakana (0xA1-0xDF range)
+		let data2 = vec![0xBB; 32];
+		let glyph2 = Glyph::new(FontSize::FS16x16, 0x00A1, data2);
+		font.insert(&glyph2, false).unwrap();
+
+		let (result, consumed) = font.lookup_from_bytes(&[0xA1]);
+		assert_eq!(consumed, 1);
+		assert!(result.is_some());
+		assert_eq!(result.unwrap().code(), 0x00A1);
+	}
+
+	#[test]
+	fn test_lookup_from_bytes_double_byte() {
+		let mut font = File::new(FontSize::FS16x16);
+
+		// Insert Hiragana 'あ' (0x82A0)
+		let data = vec![0xCC; 32];
+		let glyph = Glyph::new(FontSize::FS16x16, 0x82A0, data.clone());
+		font.insert(&glyph, false).unwrap();
+
+		// Test lookup from double bytes
+		let (result, consumed) = font.lookup_from_bytes(&[0x82, 0xA0]);
+		assert_eq!(consumed, 2);
+		assert!(result.is_some());
+		assert_eq!(result.unwrap().code(), 0x82A0);
+	}
+
+	#[test]
+	fn test_lookup_from_bytes_incomplete_sequence() {
+		let font = File::new(FontSize::FS16x16);
+
+		// Test incomplete double-byte sequence
+		let (result, consumed) = font.lookup_from_bytes(&[0x82]);
+		assert_eq!(consumed, 1);
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_lookup_from_bytes_empty() {
+		let font = File::new(FontSize::FS16x16);
+
+		// Test empty bytes
+		let (result, consumed) = font.lookup_from_bytes(&[]);
+		assert_eq!(consumed, 0);
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn test_lookup_from_bytes_shift_jis_stream() {
+		let mut font = File::new(FontSize::FS16x16);
+
+		// Insert some test glyphs
+		let codes = [0x0041, 0x82A0, 0x82A2]; // A, あ, い
+		for code in codes {
+			let data = vec![0; 32];
+			let glyph = Glyph::new(FontSize::FS16x16, code, data);
+			font.insert(&glyph, false).unwrap();
+		}
+
+		// Simulate reading from a Shift-JIS byte stream: "Aあい"
+		let bytes = [0x41, 0x82, 0xA0, 0x82, 0xA2];
+		let mut i = 0;
+		let mut found_codes = Vec::new();
+
+		while i < bytes.len() {
+			let (glyph, consumed) = font.lookup_from_bytes(&bytes[i..]);
+			if let Some(g) = glyph {
+				found_codes.push(g.code());
+			}
+			i += consumed;
+		}
+
+		assert_eq!(found_codes, vec![0x0041, 0x82A0, 0x82A2]);
+	}
+
+	#[test]
+	fn test_lookup_from_stream() {
+		let mut font = File::new(FontSize::FS16x16);
+
+		// Insert some test glyphs
+		let codes = [0x0041, 0x0042, 0x82A0, 0x82A2]; // A, B, あ, い
+		for code in codes {
+			let data = vec![0; 32];
+			let glyph = Glyph::new(FontSize::FS16x16, code, data);
+			font.insert(&glyph, false).unwrap();
+		}
+
+		// Test stream lookup: "ABあい"
+		let bytes = vec![0x41, 0x42, 0x82, 0xA0, 0x82, 0xA2];
+		let glyphs = font.lookup_from_stream(&bytes);
+
+		assert_eq!(glyphs.len(), 4);
+		assert_eq!(glyphs[0].code(), 0x0041);
+		assert_eq!(glyphs[1].code(), 0x0042);
+		assert_eq!(glyphs[2].code(), 0x82A0);
+		assert_eq!(glyphs[3].code(), 0x82A2);
+	}
+
+	#[test]
+	fn test_lookup_from_stream_with_missing_glyphs() {
+		let mut font = File::new(FontSize::FS16x16);
+
+		// Insert only 'A'
+		let data = vec![0; 32];
+		let glyph = Glyph::new(FontSize::FS16x16, 0x0041, data);
+		font.insert(&glyph, false).unwrap();
+
+		// Stream contains A, B (missing), C (missing)
+		let bytes = b"ABC";
+		let glyphs = font.lookup_from_stream(bytes);
+
+		// Should only find 'A'
+		assert_eq!(glyphs.len(), 1);
+		assert_eq!(glyphs[0].code(), 0x0041);
 	}
 }

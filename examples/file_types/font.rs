@@ -7,6 +7,7 @@
 //! - Load and inspect font files (SYSTEM.FNT, RUBI.FNT)
 //! - Export all glyphs to PNG images with visual grid layout
 //! - Test Shift-JIS character encoding and lookup
+//! - Render single-line and multi-line text to images
 //!
 //! # Font Dump Format
 //!
@@ -15,6 +16,18 @@
 //! - Black glyph pixels (RGB: 0, 0, 0)
 //! - Green 1px separators between glyphs (RGB: 0, 255, 0)
 //! - Square grid layout for optimal viewing
+//!
+//! # Text Rendering
+//!
+//! The module provides two text rendering functions:
+//! - `render_text_to_image()` - Renders a single line of text
+//! - `render_multiline_text_to_image()` - Renders multiple lines with proper spacing
+//!
+//! Both functions:
+//! - Use white background and black text
+//! - Auto-encode UTF-8 to Shift-JIS
+//! - Handle variable-length character encoding
+//! - Skip missing glyphs gracefully
 
 use dvine_internal::prelude::*;
 use image::{ImageBuffer, Rgb, RgbImage};
@@ -69,6 +82,26 @@ pub(super) fn test_fonts() {
 	dump_font_to_image(&sys_font, "system_font_dump.png");
 	dump_font_to_image(&rubi_font, "rubi_font_dump.png");
 
+	// Test text rendering
+	render_text_to_image(&sys_font, "Hello World!", "text_render_hello.png");
+	render_text_to_image(&sys_font, "あいうえお", "text_render_hiragana.png");
+	render_text_to_image(&sys_font, "こんにちは世界", "text_render_mixed.png");
+	render_text_to_image(
+		&sys_font,
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+		"text_render_full_ascii.png",
+	);
+
+	// Multi-line text rendering
+	render_multiline_text_to_image(
+		&sys_font,
+		&["Hello World!", "こんにちは", "日本語テスト", "12345"],
+		"text_render_multiline.png",
+	);
+
+	// Demo: Create a sample text image
+	demo_text_rendering(&sys_font);
+
 	info!("\n✓ Font test complete");
 }
 
@@ -90,43 +123,47 @@ fn test_jis_encoding(sys_font: &FntFile, rubi_font: &FntFile) {
 		info!("  ✓ Encoded to {} bytes", encoded.len());
 	}
 
-	// Convert Shift-JIS bytes to character codes
-	// In Shift-JIS: ASCII uses 1 byte (0x00-0x7F), Japanese characters use 2 bytes
-	info!("\n  Character codes:");
+	// Method 1: Using lookup_from_stream (recommended for byte streams)
+	info!("\n  Method 1: Using lookup_from_stream");
+	let glyphs = sys_font.lookup_from_stream(&encoded);
+	info!("    Found {} glyphs", glyphs.len());
+	for glyph in &glyphs {
+		info!("    0x{:04X}", glyph.code());
+		let bitmap: GlyphBitmap = glyph.into();
+		let art = bitmap.to_ascii_art();
+		println!("{art}");
+	}
+
+	// Method 2: Manual parsing (for demonstration)
+	info!("\n  Method 2: Manual byte-by-byte parsing");
 	let mut i = 0;
 	while i < encoded.len() {
-		let code = if encoded[i] < 0x80 {
-			// Single-byte character (ASCII range: 0x00-0x7F)
-			let code = encoded[i] as u16;
-			i += 1;
-			code
-		} else if i + 1 < encoded.len() {
-			// Double-byte character (Japanese character)
-			// Combine two bytes in big-endian order to form the character code
-			let code = u16::from_be_bytes([encoded[i], encoded[i + 1]]);
-			i += 2;
-			code
-		} else {
-			// Incomplete sequence (shouldn't happen with valid encoding)
-			i += 1;
-			continue;
-		};
+		let (glyph, consumed) = sys_font.lookup_from_bytes(&encoded[i..]);
 
-		info!("    0x{:04X}", code);
-
-		// Try to lookup the glyph in system font using the Shift-JIS character code
-		// Note: Font files may use different indexing schemes, so not all codes may be present
-		if let Some(glyph) = sys_font.lookup(code) {
-			info!("      ✓ Found in system font");
-			// Optionally display the glyph as ASCII art
-			// Convert glyph to bitmap for ASCII art visualization
-			let bitmap: GlyphBitmap = (&glyph).into();
-			let art = bitmap.to_ascii_art();
-			// Print first 4 lines only (to avoid flooding the log)
-			println!("{art}");
+		if let Some(g) = glyph {
+			info!(
+				"    0x{:04X} ({} byte{})",
+				g.code(),
+				consumed,
+				if consumed > 1 {
+					"s"
+				} else {
+					""
+				}
+			);
 		} else {
-			info!("      ✗ Not found in system font");
+			info!(
+				"    Not found ({} byte{} consumed)",
+				consumed,
+				if consumed > 1 {
+					"s"
+				} else {
+					""
+				}
+			);
 		}
+
+		i += consumed;
 	}
 
 	// Test ASCII character lookup
@@ -244,4 +281,216 @@ fn dump_font_to_image(font: &FntFile, output_filename: &str) {
 		Ok(_) => info!("  ✓ Image saved: {}", output_path.display()),
 		Err(e) => info!("  ✗ Failed to save image: {}", e),
 	}
+}
+
+/// Renders a single line of text to a PNG image using the specified font.
+///
+/// # Layout
+/// - Background: White (RGB: 255, 255, 255)
+/// - Glyph pixels: Black (RGB: 0, 0, 0)
+/// - Padding: 2 pixels on all sides
+/// - Character spacing: 1 pixel between characters
+///
+/// # Arguments
+/// * `font` - Font file to use for rendering
+/// * `text` - UTF-8 text string to render (single line)
+/// * `output_filename` - Output filename (will be saved to bin/ directory)
+fn render_text_to_image(font: &FntFile, text: &str, output_filename: &str) {
+	info!("\nRendering text to image: {}", output_filename);
+	info!("  Text: \"{}\"", text);
+
+	// Encode UTF-8 text to Shift-JIS bytes
+	let (encoded, _encoding, had_errors) = encoding_rs::SHIFT_JIS.encode(text);
+	if had_errors {
+		info!("  ⚠ Encoding had errors, some characters may be missing");
+	}
+
+	// Get all glyphs from the byte stream
+	let glyphs = font.lookup_from_stream(&encoded);
+
+	if glyphs.is_empty() {
+		info!("  ⚠ No glyphs found for this text");
+		return;
+	}
+
+	info!("  Found {} glyphs", glyphs.len());
+
+	// Get glyph dimensions
+	let glyph_size = font.font_size() as u32;
+	let char_spacing = 1u32;
+	let padding = 2u32;
+
+	// Calculate image dimensions
+	let img_width = padding * 2 + glyphs.len() as u32 * (glyph_size + char_spacing) - char_spacing;
+	let img_height = padding * 2 + glyph_size;
+
+	info!("  Image dimensions: {}x{} pixels", img_width, img_height);
+
+	// Create image with white background
+	let white = Rgb([255, 255, 255]);
+	let mut img: RgbImage = ImageBuffer::from_pixel(img_width, img_height, white);
+
+	// Draw each glyph in black
+	let black = Rgb([0, 0, 0]);
+	let mut current_x = padding;
+
+	for glyph in glyphs.iter() {
+		// Convert glyph to bitmap
+		let bitmap: GlyphBitmap = glyph.into();
+
+		// Draw glyph using line iterator
+		for (y_offset, line) in bitmap.line_iterator().enumerate() {
+			for (x_offset, &pixel) in line.iter().enumerate() {
+				if pixel {
+					let px = current_x + x_offset as u32;
+					let py = padding + y_offset as u32;
+					img.put_pixel(px, py, black);
+				}
+			}
+		}
+
+		// Move to next character position
+		current_x += glyph_size + char_spacing;
+	}
+
+	// Save the image to bin/ directory
+	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+	let bin_root = std::path::Path::new(&cargo_root).join("bin");
+	let output_path = bin_root.join(output_filename);
+
+	match img.save(&output_path) {
+		Ok(_) => info!("  ✓ Image saved: {}", output_path.display()),
+		Err(e) => info!("  ✗ Failed to save image: {}", e),
+	}
+}
+
+/// Renders multiple lines of text to a PNG image using the specified font.
+///
+/// # Layout
+/// - Background: White (RGB: 255, 255, 255)
+/// - Glyph pixels: Black (RGB: 0, 0, 0)
+/// - Padding: 4 pixels on all sides
+/// - Character spacing: 1 pixel between characters
+/// - Line spacing: 2 pixels between lines
+///
+/// # Arguments
+/// * `font` - Font file to use for rendering
+/// * `lines` - Array of UTF-8 text strings, one per line
+/// * `output_filename` - Output filename (will be saved to bin/ directory)
+fn render_multiline_text_to_image(font: &FntFile, lines: &[&str], output_filename: &str) {
+	info!("\nRendering multi-line text to image: {}", output_filename);
+	info!("  Lines: {}", lines.len());
+
+	// Encode all lines and collect glyphs
+	let mut all_line_glyphs = Vec::new();
+	let mut max_line_width = 0usize;
+
+	for (idx, line) in lines.iter().enumerate() {
+		info!("  Line {}: \"{}\"", idx + 1, line);
+
+		// Encode UTF-8 text to Shift-JIS bytes
+		let (encoded, _encoding, had_errors) = encoding_rs::SHIFT_JIS.encode(line);
+		if had_errors {
+			info!("    ⚠ Encoding had errors");
+		}
+
+		// Get all glyphs from the byte stream
+		let glyphs = font.lookup_from_stream(&encoded);
+		info!("    Found {} glyphs", glyphs.len());
+
+		max_line_width = max_line_width.max(glyphs.len());
+		all_line_glyphs.push(glyphs);
+	}
+
+	if all_line_glyphs.is_empty() || all_line_glyphs.iter().all(std::vec::Vec::is_empty) {
+		info!("  ⚠ No glyphs found for any line");
+		return;
+	}
+
+	// Get glyph dimensions
+	let glyph_size = font.font_size() as u32;
+	let char_spacing = 1u32;
+	let line_spacing = 2u32;
+	let padding = 4u32;
+
+	// Calculate image dimensions
+	let img_width = if max_line_width > 0 {
+		padding * 2 + max_line_width as u32 * (glyph_size + char_spacing) - char_spacing
+	} else {
+		padding * 2 + glyph_size
+	};
+	let img_height =
+		padding * 2 + all_line_glyphs.len() as u32 * (glyph_size + line_spacing) - line_spacing;
+
+	info!("  Image dimensions: {}x{} pixels", img_width, img_height);
+
+	// Create image with white background
+	let white = Rgb([255, 255, 255]);
+	let mut img: RgbImage = ImageBuffer::from_pixel(img_width, img_height, white);
+
+	// Draw each line
+	let black = Rgb([0, 0, 0]);
+	let mut current_y = padding;
+
+	for line_glyphs in all_line_glyphs.iter() {
+		let mut current_x = padding;
+
+		for glyph in line_glyphs.iter() {
+			// Convert glyph to bitmap
+			let bitmap: GlyphBitmap = glyph.into();
+
+			// Draw glyph using line iterator
+			for (y_offset, line) in bitmap.line_iterator().enumerate() {
+				for (x_offset, &pixel) in line.iter().enumerate() {
+					if pixel {
+						let px = current_x + x_offset as u32;
+						let py = current_y + y_offset as u32;
+						img.put_pixel(px, py, black);
+					}
+				}
+			}
+
+			// Move to next character position
+			current_x += glyph_size + char_spacing;
+		}
+
+		// Move to next line
+		current_y += glyph_size + line_spacing;
+	}
+
+	// Save the image to bin/ directory
+	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+	let bin_root = std::path::Path::new(&cargo_root).join("bin");
+	let output_path = bin_root.join(output_filename);
+
+	match img.save(&output_path) {
+		Ok(_) => info!("  ✓ Image saved: {}", output_path.display()),
+		Err(e) => info!("  ✗ Failed to save image: {}", e),
+	}
+}
+
+/// Demo function showing various text rendering capabilities.
+///
+/// Creates a sample image with Japanese and English text showcasing
+/// the font rendering capabilities.
+fn demo_text_rendering(font: &FntFile) {
+	info!("\nCreating demo text rendering...");
+
+	let demo_lines = vec![
+		"D+VINE[LUV] Font Demo",
+		"",
+		"English: ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"Numbers: 0123456789",
+		"",
+		"Japanese Hiragana:",
+		"あいうえお かきくけこ",
+		"さしすせそ たちつてと",
+		"",
+		"Japanese Katakana:",
+		"アイウエオ カキクケコ",
+		"サシスセソ タチツテト",
+	];
+
+	render_multiline_text_to_image(font, &demo_lines, "text_demo_complete.png");
+	info!("  ✓ Demo rendering complete");
 }

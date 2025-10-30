@@ -1,4 +1,4 @@
-use dvine_rs::DskFile;
+use dvine_rs::prelude::DskFile;
 use log::{error, info};
 
 #[allow(unused)]

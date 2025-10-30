@@ -1,5 +1,7 @@
 //! Font file type support for `dvine-rs` project.
 
+use std::fmt::Display;
+
 use crate::file::{error::FntError, fnt::glyph::Glyph};
 
 pub mod glyph;
@@ -33,6 +35,16 @@ pub enum FontSize {
 	FS24x24 = 24,
 }
 
+impl Display for FontSize {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			FontSize::FS8x8 => write!(f, "8x8"),
+			FontSize::FS16x16 => write!(f, "16x16"),
+			FontSize::FS24x24 => write!(f, "24x24"),
+		}
+	}
+}
+
 impl FontSize {
 	/// Returns the number of bytes per glyph based on the font size.
 	pub fn bytes_per_glyph(&self) -> usize {
@@ -64,6 +76,12 @@ pub struct File {
 
 	/// Glyphs data
 	raw: Vec<u8>,
+}
+
+impl Display for File {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Font File: size={}, glyphs={}", self.font_size, self.num_of_glyphs())
+	}
 }
 
 impl File {
@@ -130,6 +148,11 @@ impl File {
 	/// Returns the number of bytes per glyph based on the font size.
 	pub fn bytes_per_glyph(&self) -> usize {
 		self.font_size.bytes_per_glyph()
+	}
+
+	/// Returns the number of glyphs present in the font file.
+	pub fn num_of_glyphs(&self) -> usize {
+		self.offsets.iter().filter(|&&offset| offset != 0).count()
 	}
 
 	/// Looks up a glyph by its character code.

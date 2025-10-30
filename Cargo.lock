@@ -79,6 +79,7 @@ version = "0.1.0"
 dependencies = [
  "dvine_dylib",
  "dvine_internal",
+ "encoding_rs",
  "env_logger",
  "log",
 ]
@@ -102,7 +103,6 @@ dependencies = [
 name = "dvine_types"
 version = "0.1.0"
 dependencies = [
- "encoding_rs",
  "thiserror",
 ]
 

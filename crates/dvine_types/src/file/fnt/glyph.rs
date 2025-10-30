@@ -1,5 +1,7 @@
 //! Glyph structure for font files.
 
+use std::fmt::Display;
+
 use crate::file::fnt::FontSize;
 
 /// Glyph structure, representing a single character glyph.
@@ -14,6 +16,12 @@ pub struct Glyph {
 	/// Glyph pixel data, big-endian bit order.
 	/// (N*N/8) bytes, where N is the font size in pixels
 	data: Vec<u8>,
+}
+
+impl Display for Glyph {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Glyph: code=0x{:04X}, size={}", self.code, self.size)
+	}
 }
 
 impl Glyph {
@@ -142,8 +150,13 @@ impl GlyphBitmap {
 		&self.pixels
 	}
 
+	/// Converts the bitmap to an ASCII art representation using default characters.
+	pub fn to_ascii_art(&self) -> String {
+		self.to_ascii_art_other('█', '·')
+	}
+
 	/// Converts the bitmap to an ASCII art representation.
-	pub fn to_ascii_art(&self, one: char, zero: char) -> String {
+	pub fn to_ascii_art_other(&self, one: char, zero: char) -> String {
 		let n = self.size as usize;
 		let mut art = String::new();
 

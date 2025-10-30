@@ -5,7 +5,6 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-encoding_rs.workspace = true
 thiserror = { workspace = true }
 
 

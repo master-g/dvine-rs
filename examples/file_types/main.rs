@@ -1,7 +1,5 @@
 //! Test file types for `dvine-rs`
 
-use crate::startup_cfg::check_startup_cfg;
-
 mod extract;
 mod font;
 mod startup_cfg;
@@ -11,5 +9,6 @@ fn main() {
 	env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
 
 	// extract_pft_dsk();
-	check_startup_cfg();
+	// check_startup_cfg();
+	font::test_fonts();
 }

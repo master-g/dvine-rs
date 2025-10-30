@@ -78,9 +78,12 @@ dynamic_linking = ["dep:dvine_dylib"]
 [lints]
 workspace = true
 
+[dev-dependencies]
+encoding_rs = { workspace = true }
+
 [[example]]
 name = "file-types"
-path = "tests/file_types/main.rs"
+path = "examples/file_types/main.rs"
 
 # bin
 [profile.release]

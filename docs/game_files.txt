@@ -1,70 +1,36 @@
 .
-├── _inmm.dll
-├── _inmm.ini
-├── ANM.DSK # Animation disk data
-├── ANM.PFT # Animation disk lookup file (PFT for "pointer file table"?)
-├── AVI
-│   └── op_low.mpg # opening movie
-├── bmp # screenshot images, will be cleanup every time the game is run
-├── CHA.DSK # Character disk data
-├── CHA.PFT # Character PFT file
-├── DV_DISC2.TXT # Disc 2 text file ? Unnecessary for running the game ?
-├── dvine_new.exe # main executable, after unwrapping the soft battery protection
-├── dvine_new.exe.i64 # IDA pro database for the main executable
-├── dvine_op.exe # opening movie player executable
-├── Dvine.EFC # ?
-├── dvine.exe # original main executable with soft battery protection
+├── _inmm.dll ❓
+├── _inmm.ini ❓
+├── ANM.DSK # ❓ Animation disk data
+├── ANM.PFT # ✅
+├── AVI # ✅ opening movie in low resolution
+├── bmp # ✅ screenshot images, will be cleanup every time the game is run
+├── CHA.DSK # ❓ Character disk data
+├── CHA.PFT # ✅ Character PFT file
+├── DV_DISC2.TXT # ✅ Disc 2 text file ? Unnecessary for running the game ?
+├── dvine_op.exe # ✅ opening movie player executable
+├── Dvine.EFC # ❓
 ├── DXMSTEST.MFD # DirectX media streaming test file ?
-├── FGL.DSK # Foreground layer disk data
-├── FGL.PFT # Foreground layer PFT file
-├── index.htm # documentation html file Unnecessary for running the game
+├── FGL.DSK # ❓ Foreground layer disk data
+├── FGL.PFT # ✅
 ├── item.dat # item data file
-├── KG.DSK # ? disk data
-├── KG.PFT # ? PFT file
-├── logo.jpg # company logo image Unnecessary for running the game, but nice to have
-├── manual.pdf # Wow, the origin manual in PDF format! Unnecessary for running the game, but nice to have
-├── MPP.DSK # Map disk data ?
-├── MPP.PFT # Map PFT file ?
-├── op.avi # opening movie file
-├── RUBI.FNT # font file ?
+├── KG.DSK # ❓ disk data
+├── KG.PFT # ✅
+├── MPP.DSK # ❓
+├── MPP.PFT # ✅
+├── op.avi # ✅ opening movie file
+├── RUBI.FNT # ✅ font for furigana text
 ├── scene.DSK # Scene disk data
-├── scene.PFT # Scene PFT file
-├── SCN097.SCF # Single scene file, these scenes are actually missing in packed scene.DSK
-├── SCN470.SCF # may be we can pack them back in scene.DSK later
-├── SCN522.SCF
-├── SCNDAT.TBL # Scene data table file ?
-├── SPR.DSK # Sprite disk data
-├── SPR.PAL # Sprite palette file
-├── SPR.PFT # Sprite PFT file
-├── startup.ini # main configuration file for the game
-├── SYSTEM.FNT # system font file ?
-├── THUMB.DSK # Thumbnail disk data ?
-├── THUMB.PFT # Thumbnail PFT file ?
-└── track # background music files
-    ├── track_02.wav
-    ├── track_03.wav
-    ├── track_04.wav
-    ├── track_05.wav
-    ├── track_06.wav
-    ├── track_07.wav
-    ├── track_08.wav
-    ├── track_09.wav
-    ├── track_10.wav
-    ├── track_11.wav
-    ├── track_12.wav
-    ├── track_13.wav
-    ├── track_14.wav
-    ├── track_15.wav
-    ├── track_16.wav
-    ├── track_17.wav
-    ├── track_18.wav
-    ├── track_19.wav
-    ├── track_20.wav
-    ├── track_21.wav
-    ├── track_22.wav
-    ├── track_23.wav
-    ├── track_24.wav
-    ├── track_25.wav
-    ├── track_26.wav
-    ├── track_27.wav
-    └── tracks.ini
+├── scene.PFT # ✅ Scene PFT file
+├── SCN097.SCF # ❓ Single scene file, these scenes are actually missing in packed scene.DSK
+├── SCN470.SCF # ❓ may be we can pack them back in scene.DSK later
+├── SCN522.SCF # ❓
+├── SCNDAT.TBL # ❓ Scene data table file ?
+├── SPR.DSK # ❓ Sprite disk data
+├── SPR.PAL # ❓ Sprite palette file
+├── SPR.PFT # ✅ Sprite PFT file
+├── startup.ini # ✅ main configuration file for the game
+├── SYSTEM.FNT # ✅ system font file, Shift-JIS encoding
+├── THUMB.DSK # ❓ Thumbnail disk data ?
+├── THUMB.PFT # ✅ Thumbnail PFT file ?
+└── track # ✅ background music files

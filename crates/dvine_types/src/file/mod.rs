@@ -4,6 +4,7 @@ mod error;
 
 pub mod dsk;
 pub mod fnt;
+pub mod item;
 pub mod pft;
 pub mod startup_ini;
 

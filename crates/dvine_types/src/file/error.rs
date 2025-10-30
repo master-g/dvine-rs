@@ -114,3 +114,40 @@ pub enum StartupIniError {
 	#[error(transparent)]
 	IOError(#[from] std::io::Error),
 }
+
+/// Errors that can occur when parsing or manipulating FNT files
+#[derive(Debug, Error)]
+pub enum FntError {
+	/// Not enough data to parse
+	#[error("Insufficient data: expected {expected} bytes, got {actual} bytes")]
+	InsufficientData {
+		/// Expected number of bytes
+		expected: usize,
+		/// Actual number of bytes
+		actual: usize,
+	},
+
+	/// Invalid font size value
+	#[error("Invalid font size value: {0}")]
+	InvalidFontSize(u32),
+
+	/// Character code out of range
+	#[error("Character code {code:04X} out of range (max {max_code:04X})")]
+	CodeOutOfRange {
+		/// Character code that was requested
+		code: u16,
+		/// Maximum valid character code
+		max_code: u16,
+	},
+
+	/// Glyph already exists
+	#[error("Glyph for character code {code:04X} already exists")]
+	GlyphAlreadyExists {
+		/// Character code that already exists
+		code: u16,
+	},
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+}

@@ -7,4 +7,7 @@ pub mod prelude;
 pub use dvine_types;
 
 // Re-export commonly used types at crate root
-pub use dvine_types::file::{BLOCK_SIZE, DskError, DskFile, Entry, PftError, PftFile, PftHeader};
+pub use dvine_types::file::{
+	BLOCK_SIZE, DskError, DskFile, Entry, FntError, FntFile, FontSize, Glyph, GlyphBitmap,
+	GlyphIter, PftError, PftFile, PftHeader, StartupIni, StartupOpeningMode, StartupRenderMode,
+};

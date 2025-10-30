@@ -3,6 +3,7 @@
 use crate::startup_cfg::check_startup_cfg;
 
 mod extract;
+mod font;
 mod startup_cfg;
 
 fn main() {

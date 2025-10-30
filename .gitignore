@@ -9,14 +9,15 @@
 # Thumbnails
 ._*
 
-/.vscode
+/.cargo
+/.data
 /.fleet
 /.idea
-/target
-/.cargo
-/temp
-/.data
+/.ruff_cache
+/.vscode
 /bin
+/target
+/temp
 
 # Environment
 .env

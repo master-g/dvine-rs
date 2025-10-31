@@ -3,6 +3,7 @@
 mod extract;
 mod font;
 mod item;
+mod kg;
 mod startup_cfg;
 
 fn main() {
@@ -13,8 +14,17 @@ fn main() {
 	let args: Vec<String> = std::env::args().collect();
 	if args.len() > 1 {
 		match args[1].as_str() {
+			"extract" => {
+				let filename = if args.len() > 2 {
+					&args[2]
+				} else {
+					"anm"
+				};
+				extract::extract_pft_dsk(filename);
+			}
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
+			"kg" => kg::test(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!("Available examples: font, item");

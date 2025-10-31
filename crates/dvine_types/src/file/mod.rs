@@ -5,14 +5,15 @@ mod error;
 pub mod dsk;
 pub mod fnt;
 pub mod item;
+pub mod kg;
 pub mod pft;
 pub mod startup_ini;
 
 /// Block size used in DSK files (2048 bytes / 0x0800)
-pub const BLOCK_SIZE: usize = 0x0800;
+pub const DSK_BLOCK_SIZE: usize = 0x0800;
 
 // Re-export error types
-pub use error::{DskError, FntError, ItemError, PftError};
+pub use error::{DskError, FntError, ItemError, KgError, PftError};
 
 // Re-export main file types
 pub use dsk::File as DskFile;
@@ -21,6 +22,7 @@ pub use fnt::{
 	glyph::GlyphBitmapLineIterator,
 };
 pub use item::{File as ItemFile, ItemRaw, entry::ItemEntry};
+pub use kg::Header as KgHeader;
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,

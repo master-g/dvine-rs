@@ -8,10 +8,15 @@ use std::{
 	io::{self, Read},
 };
 
-use super::{BLOCK_SIZE, error::PftError};
+use super::{DSK_BLOCK_SIZE, error::PftError};
 
-const MAGIC: [u8; 4] = [0x10, 0x00, 0x00, 0x08];
-const HEADER_SIZE: usize = 16;
+mod constants {
+	/// Magic number for PFT files
+	pub const MAGIC: [u8; 4] = [0x10, 0x00, 0x00, 0x08];
+
+	/// Size of the PFT header in bytes
+	pub const HEADER_SIZE: usize = 16;
+}
 
 /// PFT File Header
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,7 +33,7 @@ impl Header {
 	/// Creates a new header with the specified number of entries
 	pub fn new(num_entries: u32) -> Self {
 		Self {
-			magic: MAGIC,
+			magic: constants::MAGIC,
 			num_entries,
 			padding: 0,
 		}
@@ -36,15 +41,15 @@ impl Header {
 
 	/// Loads header from a byte slice
 	pub fn from_bytes(data: &[u8]) -> Result<Self, PftError> {
-		if data.len() < HEADER_SIZE {
+		if data.len() < constants::HEADER_SIZE {
 			return Err(PftError::InsufficientData {
-				expected: HEADER_SIZE,
+				expected: constants::HEADER_SIZE,
 				actual: data.len(),
 			});
 		}
 
 		let magic = data[0..4].try_into().unwrap();
-		if magic != MAGIC {
+		if magic != constants::MAGIC {
 			return Err(PftError::InvalidMagic(magic));
 		}
 
@@ -59,15 +64,15 @@ impl Header {
 	}
 
 	/// Loads header from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-		let mut buffer = [0u8; HEADER_SIZE];
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
+		let mut buffer = [0u8; constants::HEADER_SIZE];
 		reader.read_exact(&mut buffer)?;
-		Self::from_bytes(&buffer).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+		Self::from_bytes(&buffer)
 	}
 
 	/// Serializes header to bytes
-	pub fn to_bytes(self) -> [u8; HEADER_SIZE] {
-		let mut buffer = [0u8; HEADER_SIZE];
+	pub fn to_bytes(self) -> [u8; constants::HEADER_SIZE] {
+		let mut buffer = [0u8; constants::HEADER_SIZE];
 		buffer[0..4].copy_from_slice(&self.magic);
 		buffer[4..8].copy_from_slice(&self.num_entries.to_le_bytes());
 		buffer[8..16].copy_from_slice(&self.padding.to_le_bytes());
@@ -76,14 +81,14 @@ impl Header {
 
 	/// Returns the size of the header in bytes
 	pub const fn size() -> usize {
-		HEADER_SIZE
+		constants::HEADER_SIZE
 	}
 }
 
 impl Default for Header {
 	fn default() -> Self {
 		Self {
-			magic: MAGIC,
+			magic: constants::MAGIC,
 			num_entries: 0,
 			padding: 0,
 		}
@@ -120,29 +125,29 @@ impl TryFrom<&Vec<u8>> for Header {
 	}
 }
 
-impl TryFrom<[u8; HEADER_SIZE]> for Header {
+impl TryFrom<[u8; constants::HEADER_SIZE]> for Header {
 	type Error = PftError;
 
-	fn try_from(value: [u8; HEADER_SIZE]) -> Result<Self, Self::Error> {
+	fn try_from(value: [u8; constants::HEADER_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
 	}
 }
 
-impl TryFrom<&[u8; HEADER_SIZE]> for Header {
+impl TryFrom<&[u8; constants::HEADER_SIZE]> for Header {
 	type Error = PftError;
 
-	fn try_from(value: &[u8; HEADER_SIZE]) -> Result<Self, Self::Error> {
+	fn try_from(value: &[u8; constants::HEADER_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
 	}
 }
 
-impl From<Header> for [u8; HEADER_SIZE] {
+impl From<Header> for [u8; constants::HEADER_SIZE] {
 	fn from(header: Header) -> Self {
 		header.to_bytes()
 	}
 }
 
-impl From<&Header> for [u8; HEADER_SIZE] {
+impl From<&Header> for [u8; constants::HEADER_SIZE] {
 	fn from(header: &Header) -> Self {
 		header.to_bytes()
 	}
@@ -241,12 +246,12 @@ impl Entry {
 
 	/// Returns the block size for DSK files
 	pub const fn block_size() -> usize {
-		BLOCK_SIZE
+		DSK_BLOCK_SIZE
 	}
 
 	/// Calculates the number of blocks needed for this entry
 	pub fn blocks_needed(&self) -> u32 {
-		self.actual_size.div_ceil(BLOCK_SIZE as u32)
+		self.actual_size.div_ceil(DSK_BLOCK_SIZE as u32)
 	}
 }
 
@@ -425,7 +430,7 @@ impl File {
 	}
 
 	/// Loads file from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
 		// Read header
 		let header = Header::from_reader(reader)?;
 

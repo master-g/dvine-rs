@@ -16,7 +16,7 @@
 #[doc(inline)]
 pub use crate::file::{
 	// Constants
-	BLOCK_SIZE,
+	DSK_BLOCK_SIZE,
 	DskError,
 
 	// DSK types

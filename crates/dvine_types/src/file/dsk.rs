@@ -64,7 +64,7 @@ use std::{
 	path::Path,
 };
 
-use super::{BLOCK_SIZE, error::DskError, pft};
+use super::{DSK_BLOCK_SIZE, error::DskError, pft};
 
 /// DSK File abstraction over any seekable reader
 ///
@@ -166,7 +166,7 @@ impl<R: Read + Seek> File<R> {
 	///
 	/// Returns an error if determining the size fails
 	pub fn num_blocks(&mut self) -> io::Result<usize> {
-		Ok((self.size()? / BLOCK_SIZE as u64) as usize)
+		Ok((self.size()? / DSK_BLOCK_SIZE as u64) as usize)
 	}
 
 	/// Returns the number of files in the container
@@ -198,19 +198,19 @@ impl<R: Read + Seek> File<R> {
 	/// - The block index is out of range
 	/// - An I/O error occurs
 	pub fn read_block(&mut self, index: usize) -> Result<Vec<u8>, DskError> {
-		let offset = (index * BLOCK_SIZE) as u64;
+		let offset = (index * DSK_BLOCK_SIZE) as u64;
 		let total_size = self.size()?;
 
 		if offset >= total_size {
 			return Err(DskError::BlockOutOfRange {
 				index: index as u32,
-				total: (total_size / BLOCK_SIZE as u64) as usize,
+				total: (total_size / DSK_BLOCK_SIZE as u64) as usize,
 			});
 		}
 
 		self.reader.seek(SeekFrom::Start(offset))?;
 
-		let mut buffer = vec![0u8; BLOCK_SIZE];
+		let mut buffer = vec![0u8; DSK_BLOCK_SIZE];
 		self.reader.read_exact(&mut buffer)?;
 
 		Ok(buffer)
@@ -229,15 +229,15 @@ impl<R: Read + Seek> File<R> {
 	/// - Any block index is out of range
 	/// - An I/O error occurs
 	pub fn read_blocks(&mut self, start_index: usize, count: usize) -> Result<Vec<u8>, DskError> {
-		let offset = (start_index * BLOCK_SIZE) as u64;
-		let bytes_to_read = count * BLOCK_SIZE;
+		let offset = (start_index * DSK_BLOCK_SIZE) as u64;
+		let bytes_to_read = count * DSK_BLOCK_SIZE;
 		let end_offset = offset + bytes_to_read as u64;
 		let total_size = self.size()?;
 
 		if end_offset > total_size {
 			return Err(DskError::BlockOutOfRange {
 				index: (start_index + count - 1) as u32,
-				total: (total_size / BLOCK_SIZE as u64) as usize,
+				total: (total_size / DSK_BLOCK_SIZE as u64) as usize,
 			});
 		}
 

@@ -186,3 +186,32 @@ pub enum ItemError {
 	#[error(transparent)]
 	IOError(#[from] std::io::Error),
 }
+
+/// Errors that can occur when parsing or manipulating KG files
+#[derive(Debug, Error)]
+pub enum KgError {
+	/// Not enough data to parse
+	#[error("Insufficient data: expected {expected} bytes, got {actual} bytes")]
+	InsufficientData {
+		/// Expected number of bytes
+		expected: usize,
+		/// Actual number of bytes
+		actual: usize,
+	},
+	/// Invalid magic number
+	#[error("Invalid magic number: expected {expected:02X?}, got {actual:02X?}")]
+	InvalidMagic {
+		/// Expected magic bytes
+		expected: [u8; 2],
+		/// Actual magic bytes
+		actual: [u8; 2],
+	},
+
+	/// Unsupported compression type
+	#[error("Unsupported compression type: {0}")]
+	UnsupportedCompressionType(u8),
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+}

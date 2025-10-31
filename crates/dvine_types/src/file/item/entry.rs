@@ -9,7 +9,7 @@ pub struct ItemEntry {
 	/// first 2 bytes, 0x00 - 0x01
 	pub id: u16,
 
-	/// raw name in Shift-JIS encoding
+	/// raw name in Shift-JIS encoding, might contain garbage after null terminator
 	/// 0x02 - 0x15 (20 bytes)
 	raw_name: [u8; 20],
 

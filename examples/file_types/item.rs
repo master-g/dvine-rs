@@ -57,12 +57,12 @@ pub fn test() -> Result<(), Box<dyn std::error::Error>> {
 			println!("  - Total size: {} bytes", file.item_count() as usize * 208);
 
 			// Show first few items
-			println!("\nFirst 5 items:");
-			for (index, item) in file.iter().take(5).enumerate() {
+			for (index, item) in file.iter().enumerate() {
 				let entry = ItemEntry::from(item.as_slice());
 				let name = entry.name().unwrap_or_else(|| {
 					let n = hex::encode(entry.raw_name());
-					format!("0x{n}")
+					let extra = hex::encode(entry.extra());
+					format!("0x{n} - 0x{extra}")
 				});
 				println!("  Item {index}: {name}");
 			}

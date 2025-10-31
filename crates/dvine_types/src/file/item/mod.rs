@@ -21,10 +21,10 @@
 //! ## Checksum Algorithm
 //!
 //! The 32-bit checksum is scattered across a 128-byte buffer:
-//! - Byte 0x00: bits [31:24]
-//! - Byte 0x07: bits [23:16]
-//! - Byte 0x29: bits [15:8]
-//! - Byte 0x41: bits [7:0]
+//! - Byte 0x3B: bits [31:24]
+//! - Byte 0x34: bits [23:16]
+//! - Byte 0x0B: bits [15:8]
+//! - Byte 0x5D: bits [7:0]
 //!
 //! The checksum is a simple sum of all decrypted data bytes.
 //!
@@ -80,7 +80,9 @@ pub mod constants {
 	pub const CHECKSUM_BUFFER_SIZE: usize = 128;
 
 	/// Checksum byte offsets within the 128-byte buffer
-	pub const CHECKSUM_OFFSETS: [usize; 4] = [0x00, 0x07, 0x29, 0x41];
+	/// Note: These offsets were determined from reverse engineering the actual assembly code
+	/// at 0x45EEA5, not from the documentation which incorrectly lists [0x00, 0x07, 0x29, 0x41]
+	pub const CHECKSUM_OFFSETS: [usize; 4] = [0x3B, 0x34, 0x0B, 0x5D];
 }
 
 /// Decryption table used to decrypt item data.

@@ -60,7 +60,11 @@ pub fn test() -> Result<(), Box<dyn std::error::Error>> {
 			println!("\nFirst 5 items:");
 			for (index, item) in file.iter().take(5).enumerate() {
 				let entry = ItemEntry::from(item.as_slice());
-				println!("  Item {}: {}", index, entry.name());
+				let name = entry.name().unwrap_or_else(|| {
+					let n = hex::encode(entry.raw_name());
+					format!("0x{n}")
+				});
+				println!("  Item {index}: {name}");
 			}
 		}
 		Err(e) => {

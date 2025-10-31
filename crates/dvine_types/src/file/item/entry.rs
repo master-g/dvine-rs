@@ -9,18 +9,12 @@ pub struct ItemEntry {
 	pub id: u16,
 
 	/// raw name in Shift-JIS encoding
-	raw_name: [u8; 23],
-
-	/// Unknown field (4 bytes)
-	unknown1: [u8; 4],
-
-	/// Item type
-	pub item_type: u8,
+	raw_name: [u8; 20],
 }
 
 impl ItemEntry {
 	/// Returns the raw name bytes in Shift-JIS encoding.
-	pub fn raw_name(&self) -> &[u8; 23] {
+	pub fn raw_name(&self) -> &[u8; 20] {
 		&self.raw_name
 	}
 
@@ -40,17 +34,12 @@ impl ItemEntry {
 impl From<&[u8]> for ItemEntry {
 	fn from(data: &[u8]) -> Self {
 		let id = u16::from_le_bytes([data[0], data[1]]);
-		let mut raw_name = [0u8; 23];
-		raw_name.copy_from_slice(&data[2..25]);
-		let mut unknown1 = [0u8; 4];
-		unknown1.copy_from_slice(&data[25..29]);
-		let item_type = data[29];
+		let mut raw_name = [0u8; 20];
+		raw_name.copy_from_slice(&data[2..22]);
 
 		Self {
 			id,
 			raw_name,
-			unknown1,
-			item_type,
 		}
 	}
 }

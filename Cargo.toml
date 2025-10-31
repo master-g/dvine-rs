@@ -20,7 +20,7 @@ exclude = ["benches"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.90.0"
+rust-version = "1.91.0"
 
 [workspace.dependencies]
 anyhow = "1.0.100"

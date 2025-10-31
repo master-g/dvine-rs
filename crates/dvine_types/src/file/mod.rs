@@ -20,7 +20,7 @@ pub use fnt::{
 	File as FntFile, FontSize, GlyphIter, glyph::Glyph, glyph::GlyphBitmap,
 	glyph::GlyphBitmapLineIterator,
 };
-pub use item::{File as ItemFile, Item};
+pub use item::{File as ItemFile, ItemRaw, entry::ItemEntry};
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,

@@ -4,7 +4,7 @@
 
 use dvine_rs::prelude::*;
 
-pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub fn test() -> Result<(), Box<dyn std::error::Error>> {
 	// Example 1: Create a new item file
 	println!("=== Example 1: Creating a new item file ===");
 	let mut items = ItemFile::new();
@@ -59,10 +59,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 			// Show first few items
 			println!("\nFirst 5 items:");
 			for (index, item) in file.iter().take(5).enumerate() {
-				println!(
-					"  Item {}: {:02X} {:02X} {:02X} {:02X}...",
-					index, item[0], item[1], item[2], item[3]
-				);
+				let entry = ItemEntry::from(item.as_slice());
+				println!("  Item {}: {}", index, entry.name());
 			}
 		}
 		Err(e) => {

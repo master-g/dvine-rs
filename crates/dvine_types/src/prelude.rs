@@ -27,10 +27,11 @@ pub use crate::file::{
 	// FNT types
 	FntFile,
 
-	// Item types
-	Item,
+	ItemEntry,
 	ItemError,
 	ItemFile,
+	// Item types
+	ItemRaw,
 	PftError,
 
 	// PFT types

@@ -13,8 +13,10 @@ const STARTUP_INI_SIZE: usize = 24;
 /// Game opening mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum OpeningMode {
 	/// Normal mode
+	#[default]
 	Normal = 0,
 	/// Loop startup
 	Loop = 1,
@@ -39,12 +41,6 @@ impl OpeningMode {
 	}
 }
 
-impl Default for OpeningMode {
-	fn default() -> Self {
-		Self::Normal
-	}
-}
-
 impl std::fmt::Display for OpeningMode {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 		match self {
@@ -58,8 +54,10 @@ impl std::fmt::Display for OpeningMode {
 /// VGA mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+#[derive(Default)]
 pub enum VgaMode {
 	/// Default resolution
+	#[default]
 	Default = 0,
 	/// VGA compatible mode
 	VgaCompatible = 1,
@@ -81,12 +79,6 @@ impl VgaMode {
 	}
 }
 
-impl Default for VgaMode {
-	fn default() -> Self {
-		Self::Default
-	}
-}
-
 impl std::fmt::Display for VgaMode {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 		match self {
@@ -99,8 +91,10 @@ impl std::fmt::Display for VgaMode {
 /// Rendering mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
+#[derive(Default)]
 pub enum RenderMode {
 	/// VSYNC ON
+	#[default]
 	VsyncOn = 0,
 	/// VSYNC OFF
 	VsyncOff = 1,
@@ -119,12 +113,6 @@ impl RenderMode {
 	/// Converts `RenderMode` to u32
 	pub fn to_u32(self) -> u32 {
 		self as u32
-	}
-}
-
-impl Default for RenderMode {
-	fn default() -> Self {
-		Self::VsyncOn
 	}
 }
 

@@ -66,6 +66,8 @@
 
 use crate::file::error::ItemError;
 
+pub mod entry;
+
 /// Item file constants.
 pub mod constants {
 	/// Size of the item count field in bytes (2 bytes, little-endian)
@@ -125,7 +127,7 @@ const ENCODE_TABLE: [u8; 0x100] = [
 ///
 /// For now, we use a simple byte array to represent the item data.
 /// The actual structure will be decoded as needed based on the documentation.
-pub type Item = [u8; constants::ITEM_SIZE];
+pub type ItemRaw = [u8; constants::ITEM_SIZE];
 
 /// Item data file structure, representing a complete ITEM.dat file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,8 +135,8 @@ pub struct File {
 	/// Number of items in the file
 	item_count: u16,
 
-	/// Decrypted item data (item_count × 208 bytes)
-	items: Vec<Item>,
+	/// Decrypted item data (`item_count` × 208 bytes)
+	items: Vec<ItemRaw>,
 }
 
 impl File {
@@ -285,7 +287,7 @@ impl File {
 	/// # Returns
 	///
 	/// `Some(&Item)` if the index is valid, `None` otherwise.
-	pub fn get_item(&self, index: usize) -> Option<&Item> {
+	pub fn get_item(&self, index: usize) -> Option<&ItemRaw> {
 		self.items.get(index)
 	}
 
@@ -298,17 +300,17 @@ impl File {
 	/// # Returns
 	///
 	/// `Some(&mut Item)` if the index is valid, `None` otherwise.
-	pub fn get_item_mut(&mut self, index: usize) -> Option<&mut Item> {
+	pub fn get_item_mut(&mut self, index: usize) -> Option<&mut ItemRaw> {
 		self.items.get_mut(index)
 	}
 
 	/// Returns an iterator over all items.
-	pub fn iter(&self) -> impl Iterator<Item = &Item> {
+	pub fn iter(&self) -> impl Iterator<Item = &ItemRaw> {
 		self.items.iter()
 	}
 
 	/// Returns a mutable iterator over all items.
-	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Item> {
+	pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut ItemRaw> {
 		self.items.iter_mut()
 	}
 
@@ -350,7 +352,7 @@ impl File {
 	/// # Arguments
 	///
 	/// * `item` - The item data to add
-	pub fn add_item(&mut self, item: Item) {
+	pub fn add_item(&mut self, item: ItemRaw) {
 		self.items.push(item);
 		self.item_count += 1;
 	}
@@ -364,7 +366,7 @@ impl File {
 	/// # Returns
 	///
 	/// `Some(Item)` if the index was valid, `None` otherwise.
-	pub fn remove_item(&mut self, index: usize) -> Option<Item> {
+	pub fn remove_item(&mut self, index: usize) -> Option<ItemRaw> {
 		if index < self.items.len() {
 			self.item_count -= 1;
 			Some(self.items.remove(index))

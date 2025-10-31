@@ -14,7 +14,7 @@ fn main() {
 	if args.len() > 1 {
 		match args[1].as_str() {
 			"font" => font::test_fonts(),
-			"item" => item::main().unwrap(),
+			"item" => item::test().unwrap(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!("Available examples: font, item");

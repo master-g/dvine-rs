@@ -65,6 +65,9 @@ impl Default for Header {
 }
 
 impl Header {
+	/// Size of the header in bytes
+	pub const SIZE: usize = constants::HEADER_SIZE;
+
 	/// Creates a new `.KG` file header with the specified parameters.
 	pub fn new() -> Self {
 		Self::default()
@@ -144,6 +147,28 @@ impl Header {
 	}
 
 	/// Loads a `.KG` file header from any reader
+	///
+	/// This allows you to peek at the header without loading the entire file,
+	/// which is useful for validation or determining file properties before
+	/// deciding whether to decompress the full image.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use dvine_types::file::kg::Header;
+	/// use std::fs::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut file = File::open("image.kg")?;
+	/// let header = Header::from_reader(&mut file)?;
+	///
+	/// // Check dimensions before loading full file
+	/// if header.width() > 4096 || header.height() > 4096 {
+	///     return Err("Image too large".into());
+	/// }
+	/// # Ok(())
+	/// # }
+	/// ```
 	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, KgError> {
 		let mut buffer = [0u8; constants::HEADER_SIZE];
 		reader.read_exact(&mut buffer)?;
@@ -223,6 +248,10 @@ impl File {
 	}
 
 	/// Creates a `.KG` file from any reader
+	///
+	/// Note: This reads the entire file into memory before decompression.
+	/// The KG decompression algorithm requires random access to the data,
+	/// so streaming decompression is not supported.
 	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, KgError> {
 		let mut data = Vec::new();
 		reader.read_to_end(&mut data)?;

@@ -308,8 +308,8 @@ fn apply_palette(indexed_data: &[u8], palette: Option<&[[u8; 4]; 256]>) -> Vec<u
 	rgb_data
 }
 
-/// Decompress KG format data
-/// Returns (RGB data, width, height)
+/// Decompress KG format data from a byte slice
+/// Returns (Header, RGB data)
 pub fn decompress(data: &[u8]) -> Result<(Header, Vec<u8>), KgError> {
 	let header = Header::from_bytes(data)?;
 

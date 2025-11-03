@@ -2,7 +2,7 @@
 
 use std::{
 	fmt::Formatter,
-	io::{self, Read},
+	io::{self, Cursor, Read},
 };
 
 use super::error::StartupIniError;
@@ -162,39 +162,38 @@ pub struct StartupIni {
 
 impl StartupIni {
 	/// Opens a startup.ini file from a path
-	pub fn open(path: impl AsRef<std::path::Path>) -> io::Result<Self> {
-		let mut file = std::fs::File::open(path)?;
-		Self::from_reader(&mut file)
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StartupIniError> {
+		let file = std::fs::File::open(path)?;
+		Self::from_reader(file)
 	}
 
-	/// Creates a `StartupIni` from raw bytes
+	/// Loads startup.ini from any reader
 	///
 	/// # Arguments
-	/// * `data` - Byte slice containing the binary data
+	/// * `reader` - A readable source containing startup.ini data
 	///
 	/// # Returns
 	/// * `Ok(StartupIni)` if parsing succeeds
-	/// * `Err(StartupIniError)` if the data is invalid or too short
-	pub fn from_bytes(data: &[u8]) -> Result<Self, StartupIniError> {
-		if data.len() < STARTUP_INI_SIZE {
-			return Err(StartupIniError::InsufficientData {
-				expected: STARTUP_INI_SIZE,
-				actual: data.len(),
-			});
-		}
+	/// * `Err(io::Error)` if reading fails or the data is invalid
+	pub fn from_reader<R: Read>(mut reader: R) -> Result<Self, StartupIniError> {
+		let mut buffer = [0u8; STARTUP_INI_SIZE];
+		reader.read_exact(&mut buffer)?;
 
-		let opening_mode = OpeningMode::from_u8(data[0])?;
-		let vga_mode = VgaMode::from_u8(data[1])?;
-		let reserved = [data[2], data[3]];
+		let opening_mode = OpeningMode::from_u8(buffer[0])
+			.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+		let vga_mode = VgaMode::from_u8(buffer[1])
+			.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+		let reserved = [buffer[2], buffer[3]];
 
-		let render_mode_value = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
-		let render_mode = RenderMode::from_u32(render_mode_value)?;
+		let render_mode_value = u32::from_le_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
+		let render_mode = RenderMode::from_u32(render_mode_value)
+			.map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
 		let window_rect = [
-			u32::from_le_bytes([data[8], data[9], data[10], data[11]]),
-			u32::from_le_bytes([data[12], data[13], data[14], data[15]]),
-			u32::from_le_bytes([data[16], data[17], data[18], data[19]]),
-			u32::from_le_bytes([data[20], data[21], data[22], data[23]]),
+			u32::from_le_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]),
+			u32::from_le_bytes([buffer[12], buffer[13], buffer[14], buffer[15]]),
+			u32::from_le_bytes([buffer[16], buffer[17], buffer[18], buffer[19]]),
+			u32::from_le_bytes([buffer[20], buffer[21], buffer[22], buffer[23]]),
 		];
 
 		Ok(Self {
@@ -206,11 +205,16 @@ impl StartupIni {
 		})
 	}
 
-	/// Loads startup.ini from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-		let mut buffer = [0u8; STARTUP_INI_SIZE];
-		reader.read_exact(&mut buffer)?;
-		Self::from_bytes(&buffer).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+	/// Creates a `StartupIni` from raw bytes
+	///
+	/// # Arguments
+	/// * `data` - Byte slice containing the binary data
+	///
+	/// # Returns
+	/// * `Ok(StartupIni)` if parsing succeeds
+	/// * `Err(StartupIniError)` if the data is invalid or too short
+	pub fn from_bytes(data: &[u8]) -> Result<Self, StartupIniError> {
+		Self::from_reader(Cursor::new(data))
 	}
 
 	/// Converts the `StartupIni` to bytes

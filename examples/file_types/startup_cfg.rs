@@ -1,7 +1,7 @@
 use dvine_rs::prelude::file::startup_ini::{RenderMode, StartupIni};
 
 #[allow(unused)]
-pub(super) fn check_startup_cfg() {
+pub(super) fn test() {
 	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
 	let bin_root = std::path::Path::new(&cargo_root).join("bin");
 

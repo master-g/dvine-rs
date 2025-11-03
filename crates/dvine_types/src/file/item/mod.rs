@@ -170,16 +170,11 @@ impl File {
 	/// - The checksum validation fails
 	/// - The data size is not a multiple of the item size
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, ItemError> {
-		use std::io::Read;
-
-		let mut file = std::fs::File::open(path)?;
-		let mut data = Vec::new();
-		file.read_to_end(&mut data)?;
-
-		Self::from_bytes(&data)
+		let file = std::fs::File::open(path)?;
+		Self::from_reader(file)
 	}
 
-	/// Parses item data from a byte slice.
+	/// Parses item data from a reader.
 	///
 	/// # File Structure
 	///
@@ -189,58 +184,43 @@ impl File {
 	///
 	/// # Arguments
 	///
-	/// * `data` - Raw file data
+	/// * `reader` - A readable source containing item data
 	///
 	/// # Errors
 	///
 	/// Returns an error if:
+	/// - Reading from the reader fails
 	/// - The data is too small
 	/// - The checksum validation fails
 	/// - The data size is not a multiple of the item size
-	pub fn from_bytes(data: &[u8]) -> Result<Self, ItemError> {
-		// Validate minimum size: item_count + checksum_buffer
-		let min_size = constants::ITEM_COUNT_SIZE + constants::CHECKSUM_BUFFER_SIZE;
-		if data.len() < min_size {
-			return Err(ItemError::InsufficientData {
-				expected: min_size,
-				actual: data.len(),
-			});
-		}
-
-		// Parse item count (2 bytes, little-endian)
-		let item_count = u16::from_le_bytes([data[0], data[1]]);
+	pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self, ItemError> {
+		// Read item count (2 bytes, little-endian)
+		let mut item_count_buf = [0u8; constants::ITEM_COUNT_SIZE];
+		reader.read_exact(&mut item_count_buf)?;
+		let item_count = u16::from_le_bytes(item_count_buf);
 
 		// Calculate expected data size
 		let data_size = (item_count as usize) * constants::ITEM_SIZE;
-		let total_expected =
-			constants::ITEM_COUNT_SIZE + data_size + constants::CHECKSUM_BUFFER_SIZE;
 
-		if data.len() < total_expected {
-			return Err(ItemError::InsufficientData {
-				expected: total_expected,
-				actual: data.len(),
-			});
-		}
-
-		// Extract encrypted data section
-		let encrypted_data =
-			&data[constants::ITEM_COUNT_SIZE..constants::ITEM_COUNT_SIZE + data_size];
+		// Read encrypted data section
+		let mut encrypted_data = vec![0u8; data_size];
+		reader.read_exact(&mut encrypted_data)?;
 
 		// Decrypt data and calculate checksum
 		let mut decrypted = Vec::with_capacity(data_size);
 		let mut checksum: u32 = 0;
 
-		for &byte in encrypted_data {
+		for &byte in &encrypted_data {
 			let decrypted_byte = DECODE_TABLE[byte as usize];
 			decrypted.push(decrypted_byte);
 			checksum = checksum.wrapping_add(decrypted_byte as u32);
 		}
 
-		// Extract and reconstruct checksum from 128-byte buffer
-		let checksum_offset = constants::ITEM_COUNT_SIZE + data_size;
-		let checksum_buffer =
-			&data[checksum_offset..checksum_offset + constants::CHECKSUM_BUFFER_SIZE];
+		// Read checksum buffer (128 bytes)
+		let mut checksum_buffer = [0u8; constants::CHECKSUM_BUFFER_SIZE];
+		reader.read_exact(&mut checksum_buffer)?;
 
+		// Reconstruct checksum from buffer
 		let file_checksum = ((checksum_buffer[constants::CHECKSUM_OFFSETS[0]] as u32) << 24)
 			| ((checksum_buffer[constants::CHECKSUM_OFFSETS[1]] as u32) << 16)
 			| ((checksum_buffer[constants::CHECKSUM_OFFSETS[2]] as u32) << 8)
@@ -273,6 +253,29 @@ impl File {
 			item_count,
 			items,
 		})
+	}
+
+	/// Parses item data from a byte slice.
+	///
+	/// # File Structure
+	///
+	/// ```text
+	/// [Item Count: 2 bytes] [Encrypted Data: N × 208 bytes] [Checksum Buffer: 128 bytes]
+	/// ```
+	///
+	/// # Arguments
+	///
+	/// * `data` - Raw file data
+	///
+	/// # Errors
+	///
+	/// Returns an error if:
+	/// - The data is too small
+	/// - The checksum validation fails
+	/// - The data size is not a multiple of the item size
+	pub fn from_bytes(data: &[u8]) -> Result<Self, ItemError> {
+		use std::io::Cursor;
+		Self::from_reader(Cursor::new(data))
 	}
 
 	/// Returns the number of items in the file.

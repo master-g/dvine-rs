@@ -1,54 +1,54 @@
-use std::{collections::HashSet, io::Read};
+use dvine_rs::prelude::file::{KgError, KgFile};
+use image::{ImageBuffer, Rgb};
+
+// use dvine_rs::prelude::file::KgHeader;
 
 pub(super) fn test() {
 	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
 	let bin_root = std::path::Path::new(&cargo_root).join("bin");
 	let kc_extract_path = bin_root.join("kg_extract");
 
-	// buffer
-	let mut buf: [u8; 48] = [0; 48];
-
-	let mut fourth_byte_set: HashSet<u8> = std::collections::HashSet::new();
-
 	// for every file in kc_extract directory
 	for entry in std::fs::read_dir(&kc_extract_path).unwrap() {
 		let entry = entry.unwrap();
 		let path = entry.path();
 		if path.is_file() {
-			// read first 32 bytes
-			let mut file = std::fs::File::open(&path).unwrap();
-			file.read_exact(&mut buf).unwrap();
+			let f = match KgFile::open(&path) {
+				Ok(f) => f,
+				Err(e) => {
+					if matches!(
+						e,
+						KgError::InvalidMagic {
+							expected: _,
+							actual: _
+						}
+					) {
+						continue;
+					}
 
-			// collect fourth byte
-			fourth_byte_set.insert(buf[3]);
-
-			// print buf in hex-dump format
-			// 32 bytes per line, 16 bytes per group
-
-			println!("File: {}", path.file_name().unwrap().to_string_lossy());
-			print!("      ");
-			for i in 0..16 {
-				if i % 8 == 0 && i != 0 {
-					print!(" ");
+					panic!("Failed to open KG file {}: {}", path.display(), e);
 				}
-				print!("{:02X} ", i);
-			}
-			for (i, byte) in buf.iter().enumerate() {
-				if i % 16 == 0 {
-					print!("\n{:04X}: ", i);
-				} else if i % 8 == 0 {
-					print!(" ");
-				}
-				print!("{:02X} ", byte);
-			}
-			println!("\n");
+			};
+
+			println!("{}", f.header());
+
+			// Get image dimensions and pixel data
+			let width = f.header().width() as u32;
+			let height = f.header().height() as u32;
+			let pixels = f.pixels();
+
+			// Create an RGB image buffer
+			let img: ImageBuffer<Rgb<u8>, Vec<u8>> =
+				ImageBuffer::from_raw(width, height, pixels.to_vec())
+					.expect("Failed to create image buffer");
+
+			// Generate output BMP filename
+			let output_filename = path.file_stem().unwrap().to_str().unwrap().to_owned() + ".bmp";
+			let output_path = kc_extract_path.join(output_filename);
+
+			// Save as BMP
+			img.save(&output_path).unwrap();
+			println!("Saved BMP to: {}", output_path.display());
 		}
 	}
-
-	// print unique fourth bytes
-	println!("\nUnique fourth bytes:");
-	for byte in &fourth_byte_set {
-		print!("{:02X} ", byte);
-	}
-	println!();
 }

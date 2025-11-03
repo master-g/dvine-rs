@@ -14,6 +14,10 @@ pub enum PftError {
 		actual: usize,
 	},
 
+	/// Slice conversion error
+	#[error(transparent)]
+	TryFromSliceError(#[from] std::array::TryFromSliceError),
+
 	/// Invalid magic number
 	#[error("Invalid magic number: {0:02X?}")]
 	InvalidMagic([u8; 4]),
@@ -210,6 +214,10 @@ pub enum KgError {
 	/// Unsupported compression type
 	#[error("Unsupported compression type: {0}")]
 	UnsupportedCompressionType(u8),
+
+	/// Decompression error
+	#[error("Decompression error")]
+	DecompressionError,
 
 	/// IO error
 	#[error(transparent)]

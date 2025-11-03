@@ -48,13 +48,13 @@ impl Header {
 			});
 		}
 
-		let magic = data[0..4].try_into().unwrap();
+		let magic = data[0..4].try_into()?;
 		if magic != constants::MAGIC {
 			return Err(PftError::InvalidMagic(magic));
 		}
 
-		let num_entries = u32::from_le_bytes(data[4..8].try_into().unwrap());
-		let padding = u64::from_le_bytes(data[8..16].try_into().unwrap());
+		let num_entries = u32::from_le_bytes(data[4..8].try_into()?);
+		let padding = u64::from_le_bytes(data[8..16].try_into()?);
 
 		Ok(Self {
 			magic,

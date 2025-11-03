@@ -1,14 +1,4 @@
-use super::{Compression, Header, KgError};
-
-mod opcodes {
-	// Opcode definitions
-	pub const OP_DICT_LOOKUP: u8 = 0;
-	pub const OP_COPY_PREV_PIXEL: u8 = 2;
-	pub const OP_COPY_PREV_LINE: u8 = 12;
-	pub const OP_COPY_DIAGONAL_1: u8 = 13;
-	pub const OP_COPY_DIAGONAL_2: u8 = 14;
-	pub const OP_COPY_DOUBLE_BPP: u8 = 15;
-}
+use super::{Compression, Header, KgError, opcodes};
 
 /// State structure for the decompressor
 #[derive(Debug)]

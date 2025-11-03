@@ -66,7 +66,7 @@
 //! # }
 //! ```
 
-use std::fmt::Display;
+use std::{fmt::Display, io::Cursor};
 
 use crate::file::{error::FntError, fnt::glyph::Glyph};
 
@@ -210,38 +210,8 @@ impl File {
 	/// - The file cannot be opened or read
 	/// - The font size is invalid
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, FntError> {
-		use std::io::Read;
-
 		let mut file = std::fs::File::open(path)?;
-
-		// Read font size from header
-		let mut buf = [0u8; constants::HEADER_SIZE];
-		file.read_exact(&mut buf)?;
-		let font_size = match u32::from_le_bytes(buf) {
-			8 => FontSize::FS8x8,
-			16 => FontSize::FS16x16,
-			24 => FontSize::FS24x24,
-			other => return Err(FntError::InvalidFontSize(other)),
-		};
-
-		// Read offset table
-		let mut offset_buf = [0u8; constants::OFFSET_TABLE_SIZE];
-		file.read_exact(&mut offset_buf)?;
-		let mut offsets = [0u16; constants::OFFSET_TABLE_ENTRIES];
-		for (i, offset) in offsets.iter_mut().enumerate() {
-			let start = i * 2;
-			*offset = u16::from_le_bytes([offset_buf[start], offset_buf[start + 1]]);
-		}
-
-		// Read bitmap data
-		let mut raw = Vec::new();
-		file.read_to_end(&mut raw)?;
-
-		Ok(Self {
-			font_size,
-			offsets,
-			raw,
-		})
+		Self::from_reader(&mut file)
 	}
 
 	/// Returns the font size of the font file.
@@ -497,13 +467,15 @@ impl File {
 
 	/// Loads a font file from a byte slice.
 	pub fn from_bytes(data: &[u8]) -> Result<Self, FntError> {
-		use std::io::{Cursor, Read};
-
 		let mut cursor = Cursor::new(data);
+		Self::from_reader(&mut cursor)
+	}
 
+	/// Loads a font file from any reader.
+	pub fn from_reader<R: std::io::Read>(reader: &mut R) -> Result<Self, FntError> {
 		// Read font size from header
 		let mut buf = [0u8; constants::HEADER_SIZE];
-		cursor.read_exact(&mut buf)?;
+		reader.read_exact(&mut buf)?;
 		let font_size = match u32::from_le_bytes(buf) {
 			8 => FontSize::FS8x8,
 			16 => FontSize::FS16x16,
@@ -513,7 +485,7 @@ impl File {
 
 		// Read offset table
 		let mut offset_buf = [0u8; constants::OFFSET_TABLE_SIZE];
-		cursor.read_exact(&mut offset_buf)?;
+		reader.read_exact(&mut offset_buf)?;
 		let mut offsets = [0u16; constants::OFFSET_TABLE_ENTRIES];
 		for (i, offset) in offsets.iter_mut().enumerate() {
 			let start = i * 2;
@@ -522,7 +494,7 @@ impl File {
 
 		// Read bitmap data
 		let mut raw = Vec::new();
-		cursor.read_to_end(&mut raw)?;
+		reader.read_to_end(&mut raw)?;
 
 		Ok(Self {
 			font_size,
@@ -561,42 +533,6 @@ impl<'a> IntoIterator for &'a File {
 
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter()
-	}
-}
-
-impl TryFrom<&[u8]> for File {
-	type Error = FntError;
-
-	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-		Self::from_bytes(value)
-	}
-}
-
-impl TryFrom<Vec<u8>> for File {
-	type Error = FntError;
-
-	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-		Self::from_bytes(&value)
-	}
-}
-
-impl TryFrom<&Vec<u8>> for File {
-	type Error = FntError;
-
-	fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
-		Self::from_bytes(value)
-	}
-}
-
-impl From<File> for Vec<u8> {
-	fn from(file: File) -> Self {
-		file.to_bytes()
-	}
-}
-
-impl From<&File> for Vec<u8> {
-	fn from(file: &File) -> Self {
-		file.to_bytes()
 	}
 }
 

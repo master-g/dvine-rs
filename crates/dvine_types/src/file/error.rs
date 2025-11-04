@@ -215,6 +215,10 @@ pub enum KgError {
 	#[error("Unsupported compression type: {0}")]
 	UnsupportedCompressionType(u8),
 
+	/// Buffer underflow during decompression
+	#[error("Buffer underflow during decompression: {0}")]
+	UnderflowError(String),
+
 	/// Decompression error
 	#[error("Decompression error")]
 	DecompressionError,

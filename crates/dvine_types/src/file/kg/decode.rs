@@ -138,16 +138,21 @@ impl DecompressorState {
 		cache_entry[0] = new_color;
 	}
 
-	fn read_color_index(&mut self) -> u8 {
+	fn read_color_index(&mut self) -> Result<u8, KgError> {
 		let flag = self.read_bits(1);
 
 		if flag == 1 {
-			self.read_bits(8) as u8
+			Ok(self.read_bits(8) as u8)
 		} else {
-			let ref_pos = self.write_position.saturating_sub(self.bytes_per_pixel);
+			let Some(ref_pos) = self.write_position.checked_sub(self.bytes_per_pixel) else {
+				return Err(KgError::UnderflowError(format!(
+					"Underflow in read_color_index: write_position={}, bytes_per_pixel={}",
+					self.write_position, self.bytes_per_pixel
+				)));
+			};
 			let reference_color = self.output_buffer[ref_pos];
 			let cache_index = self.read_bits(3) as usize;
-			self.lru_cache[reference_color as usize][cache_index]
+			Ok(self.lru_cache[reference_color as usize][cache_index])
 		}
 	}
 
@@ -179,56 +184,96 @@ impl DecompressorState {
 		}
 	}
 
-	fn opcode_0_dictionary_lookup(&mut self) {
-		let color_index = self.read_color_index();
+	fn opcode_0_dictionary_lookup(&mut self) -> Result<(), KgError> {
+		let color_index = self.read_color_index()?;
 		self.write_pixel(color_index);
 
-		let ref_pos = self.write_position.saturating_sub(self.bytes_per_pixel);
+		let Some(ref_pos) = self.write_position.checked_sub(self.bytes_per_pixel) else {
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_0_dictionary_lookup: write_position={}, bytes_per_pixel={}",
+				self.write_position, self.bytes_per_pixel
+			)));
+		};
 		let reference_color = self.output_buffer[ref_pos];
 
 		self.update_lru_cache(reference_color, color_index);
 		self.write_position += self.bytes_per_pixel;
+
+		Ok(())
 	}
 
-	fn opcode_2_copy_previous_pixel(&mut self) {
+	fn opcode_2_copy_previous_pixel(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
-		let src = self.write_position.saturating_sub(self.bytes_per_pixel);
+		let Some(src) = self.write_position.checked_sub(self.bytes_per_pixel) else {
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_2_copy_previous_pixel: write_position={}, bytes_per_pixel={}",
+				self.write_position, self.bytes_per_pixel
+			)));
+		};
 		self.copy_data(self.write_position, src, length);
+
+		Ok(())
 	}
 
-	fn opcode_12_copy_up_1_line(&mut self) {
+	fn opcode_12_copy_up_1_line(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
-		let src = self.write_position.saturating_sub(self.line_bytes);
+		let Some(src) = self.write_position.checked_sub(self.line_bytes) else {
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_12_copy_up_1_line: write_position={}, line_bytes={}",
+				self.write_position, self.line_bytes
+			)));
+		};
 		self.copy_data(self.write_position, src, length);
+
+		Ok(())
 	}
 
-	fn opcode_13_copy_left_up(&mut self) {
+	fn opcode_13_copy_left_up(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > self.line_bytes {
 			self.write_position - self.line_bytes + self.bytes_per_pixel
 		} else {
-			self.bytes_per_pixel
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_13_copy_left_up: write_position={}, line_bytes={}, bytes_per_pixel={}",
+				self.write_position, self.line_bytes, self.bytes_per_pixel
+			)));
+			// self.bytes_per_pixel
 		};
 		self.copy_data(self.write_position, src, length);
+
+		Ok(())
 	}
 
-	fn opcode_14_copy_up_2_lines(&mut self) {
+	fn opcode_14_copy_up_2_lines(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > (self.line_bytes + self.bytes_per_pixel) {
 			self.write_position - self.line_bytes - self.bytes_per_pixel
 		} else {
-			0
+			// 0
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_14_copy_up_2_lines: write_position={}, line_bytes={}, bytes_per_pixel={}",
+				self.write_position, self.line_bytes, self.bytes_per_pixel
+			)));
 		};
 		self.copy_data(self.write_position, src, length);
+
+		Ok(())
 	}
 
-	fn opcode_15_copy_up_double(&mut self) {
+	fn opcode_15_copy_up_double(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
-		let src = self.write_position.saturating_sub(self.bytes_per_pixel * 2);
+		let Some(src) = self.write_position.checked_sub(self.bytes_per_pixel * 2) else {
+			return Err(KgError::UnderflowError(format!(
+				"Overflow in opcode_15_copy_up_double: write_position={}, bytes_per_pixel={}",
+				self.write_position, self.bytes_per_pixel
+			)));
+		};
 		self.copy_data(self.write_position, src, length);
+
+		Ok(())
 	}
 
-	fn decompress_type1(&mut self) -> bool {
+	fn decompress_type1(&mut self) -> Result<(), KgError> {
 		// Read first 2 bytes
 		for _ in 0..2 {
 			let byte_val = self.read_bits(8) as u8;
@@ -241,17 +286,17 @@ impl DecompressorState {
 			let opcode = self.read_opcode();
 
 			match opcode {
-				opcodes::OP_DICT_LOOKUP => self.opcode_0_dictionary_lookup(),
-				opcodes::OP_COPY_PREV_PIXEL => self.opcode_2_copy_previous_pixel(),
-				opcodes::OP_COPY_PREV_LINE => self.opcode_12_copy_up_1_line(),
-				opcodes::OP_COPY_DIAGONAL_1 => self.opcode_13_copy_left_up(),
-				opcodes::OP_COPY_DIAGONAL_2 => self.opcode_14_copy_up_2_lines(),
-				opcodes::OP_COPY_DOUBLE_BPP => self.opcode_15_copy_up_double(),
+				opcodes::OP_DICT_LOOKUP => self.opcode_0_dictionary_lookup()?,
+				opcodes::OP_COPY_PREV_PIXEL => self.opcode_2_copy_previous_pixel()?,
+				opcodes::OP_COPY_PREV_LINE => self.opcode_12_copy_up_1_line()?,
+				opcodes::OP_COPY_DIAGONAL_1 => self.opcode_13_copy_left_up()?,
+				opcodes::OP_COPY_DIAGONAL_2 => self.opcode_14_copy_up_2_lines()?,
+				opcodes::OP_COPY_DOUBLE_BPP => self.opcode_15_copy_up_double()?,
 				_ => {}
 			}
 		}
 
-		true
+		Ok(())
 	}
 }
 
@@ -330,14 +375,10 @@ pub fn decompress(data: &[u8]) -> Result<super::File, KgError> {
 		state.palette = pal;
 	}
 
-	let success = if compression_type == Compression::BPP3 {
-		state.decompress_type1()
+	if compression_type == Compression::BPP3 {
+		state.decompress_type1()?;
 	} else {
-		false
-	};
-
-	if !success {
-		return Err(KgError::DecompressionError);
+		return Err(KgError::UnsupportedCompressionType(compression_type as u8));
 	}
 
 	let final_data = if has_palette {

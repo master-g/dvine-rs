@@ -15,19 +15,25 @@ pub(super) fn test(flip: bool) {
 		if path.is_file() {
 			let f = match KgFile::open(&path) {
 				Ok(f) => f,
-				Err(e) => {
-					if matches!(
-						e,
-						KgError::InvalidMagic {
-							expected: _,
-							actual: _
-						}
-					) {
+				Err(e) => match e {
+					KgError::InvalidMagic {
+						expected: _,
+						actual: _,
+					} => {
+						println!("Skipping non-KG file: {}", path.display());
 						continue;
 					}
-
-					panic!("Failed to open KG file {}: {}", path.display(), e);
-				}
+					KgError::UnderflowError(e) => {
+						println!(
+							"Skipping KG file cannot be decompress correctly:{e}\n{}",
+							path.display()
+						);
+						continue;
+					}
+					_ => {
+						panic!("Failed to open KG file {}: {}", path.display(), e);
+					}
+				},
 			};
 
 			println!("{}", f.header());
@@ -52,7 +58,8 @@ fn save_to_bmp(f: &KgFile, output_path: &std::path::Path, flip: bool) {
 
 	// flip XY axes
 	let img = if flip {
-		image::imageops::flip_horizontal(&image::imageops::flip_vertical(&img))
+		image::imageops::flip_vertical(&img)
+		// image::imageops::flip_horizontal(&))
 	} else {
 		img
 	};

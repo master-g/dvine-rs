@@ -117,25 +117,25 @@ impl DecompressorState {
 	fn update_lru_cache(&mut self, reference_color: u8, new_color: u8) {
 		let cache_entry = &mut self.lru_cache[reference_color as usize];
 
-		let mut position = 8;
-		for (i, &color) in cache_entry.iter().enumerate() {
-			if color == new_color {
-				position = i;
-				break;
+		// Find position of new_color in cache, if it exists
+		let position = cache_entry.iter().position(|&color| color == new_color);
+
+		match position {
+			// Already at front, nothing to do
+			Some(0) => {}
+			// Found in cache, move to front
+			Some(pos) => {
+				// Use copy_within to shift elements [0..pos) to [1..pos+1)
+				cache_entry.copy_within(0..pos, 1);
+				cache_entry[0] = new_color;
+			}
+			// Not found, insert at front and shift everything else
+			None => {
+				// Shift elements [0..7) to [1..8), discarding the last element
+				cache_entry.copy_within(0..7, 1);
+				cache_entry[0] = new_color;
 			}
 		}
-
-		if position == 0 {
-			return;
-		}
-		if position == 8 {
-			position = 7;
-		}
-
-		for i in (1..=position).rev() {
-			cache_entry[i] = cache_entry[i - 1];
-		}
-		cache_entry[0] = new_color;
 	}
 
 	fn read_color_index(&mut self) -> Result<u8, KgError> {
@@ -228,7 +228,7 @@ impl DecompressorState {
 		Ok(())
 	}
 
-	fn opcode_13_copy_left_up(&mut self) -> Result<(), KgError> {
+	fn opcode_13_copy_up_right(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > self.line_bytes {
 			self.write_position - self.line_bytes + self.bytes_per_pixel
@@ -244,16 +244,16 @@ impl DecompressorState {
 		Ok(())
 	}
 
-	fn opcode_14_copy_up_2_lines(&mut self) -> Result<(), KgError> {
+	fn opcode_14_copy_up_left(&mut self) -> Result<(), KgError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > (self.line_bytes + self.bytes_per_pixel) {
 			self.write_position - self.line_bytes - self.bytes_per_pixel
 		} else {
-			// 0
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_14_copy_up_2_lines: write_position={}, line_bytes={}, bytes_per_pixel={}",
-				self.write_position, self.line_bytes, self.bytes_per_pixel
-			)));
+			0
+			// return Err(KgError::UnderflowError(format!(
+			// 	"Overflow in opcode_14_copy_up_2_lines: write_position={}, line_bytes={}, bytes_per_pixel={}",
+			// 	self.write_position, self.line_bytes, self.bytes_per_pixel
+			// )));
 		};
 		self.copy_data(self.write_position, src, length);
 
@@ -289,8 +289,8 @@ impl DecompressorState {
 				opcodes::OP_DICT_LOOKUP => self.opcode_0_dictionary_lookup()?,
 				opcodes::OP_COPY_PREV_PIXEL => self.opcode_2_copy_previous_pixel()?,
 				opcodes::OP_COPY_PREV_LINE => self.opcode_12_copy_up_1_line()?,
-				opcodes::OP_COPY_DIAGONAL_1 => self.opcode_13_copy_left_up()?,
-				opcodes::OP_COPY_DIAGONAL_2 => self.opcode_14_copy_up_2_lines()?,
+				opcodes::OP_COPY_DIAGONAL_1 => self.opcode_13_copy_up_right()?,
+				opcodes::OP_COPY_DIAGONAL_2 => self.opcode_14_copy_up_left()?,
 				opcodes::OP_COPY_DOUBLE_BPP => self.opcode_15_copy_up_double()?,
 				_ => {}
 			}
@@ -373,6 +373,8 @@ pub fn decompress(data: &[u8]) -> Result<super::File, KgError> {
 	let mut state = DecompressorState::new(width, height, output_bpp, compressed_data);
 	if let Some(pal) = palette {
 		state.palette = pal;
+	} else {
+		return Err(KgError::DecompressionError("Missing palette".to_string()));
 	}
 
 	if compression_type == Compression::BPP3 {

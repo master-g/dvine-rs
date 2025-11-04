@@ -15,13 +15,19 @@ mod constants {
 	pub const HEADER_SIZE: usize = 32;
 }
 
+// Opcode definitions
 mod opcodes {
-	// Opcode definitions
+	/// Lookup in the dictionary
 	pub const OP_DICT_LOOKUP: u8 = 0;
+	/// Copy from the previous pixel
 	pub const OP_COPY_PREV_PIXEL: u8 = 2;
+	/// Copy from two pixels up
 	pub const OP_COPY_PREV_LINE: u8 = 12;
+	/// Copy from the pixel diagonally up-right
 	pub const OP_COPY_DIAGONAL_1: u8 = 13;
+	/// Copy from the pixel diagonally up-left
 	pub const OP_COPY_DIAGONAL_2: u8 = 14;
+	/// Copy raw double bytes per pixel
 	pub const OP_COPY_DOUBLE_BPP: u8 = 15;
 }
 

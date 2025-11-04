@@ -220,8 +220,8 @@ pub enum KgError {
 	UnderflowError(String),
 
 	/// Decompression error
-	#[error("Decompression error")]
-	DecompressionError,
+	#[error("Decompression error: {0}")]
+	DecompressionError(String),
 
 	/// IO error
 	#[error(transparent)]

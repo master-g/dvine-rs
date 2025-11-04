@@ -1,0 +1,18 @@
+[package]
+name = "dvine-benches"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+criterion = { version = "0.7.0", features = ["html_reports"] }
+dvine_types = { path = "../crates/dvine_types" }
+
+[lib]
+name = "dvine_benches"
+path = "src/lib.rs"
+bench = false
+
+[[bench]]
+name = "kg_decode"
+harness = false

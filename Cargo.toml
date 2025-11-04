@@ -15,8 +15,7 @@ resolver = "3"
 rustdoc-args = ["--html-in-header", "doc-assets/header.html"]
 
 [workspace]
-members = ["crates/*"]
-exclude = ["benches"]
+members = ["crates/*", "benches"]
 
 [workspace.package]
 edition = "2024"
@@ -97,3 +96,7 @@ strip = "debuginfo"
 lto = true
 panic = "abort"
 codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+debug = true

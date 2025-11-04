@@ -169,9 +169,10 @@ impl<R: Read + Seek> File<R> {
 		Ok((self.size()? / DSK_BLOCK_SIZE as u64) as usize)
 	}
 
-	/// Returns the number of files in the container
+	/// Returns the number of valid files in the container
+	/// (entries with non-zero size or non-empty name)
 	pub fn num_files(&self) -> usize {
-		self.pft.num_entries()
+		self.pft.entries().iter().filter(|e| e.is_valid()).count()
 	}
 
 	/// Checks if a file with the given name exists
@@ -182,8 +183,9 @@ impl<R: Read + Seek> File<R> {
 	/// Returns an iterator over entries only (without extracting data)
 	///
 	/// This is efficient if you only need to inspect metadata.
+	/// Only returns valid entries (entries with non-zero size or non-empty name).
 	pub fn entries(&self) -> impl Iterator<Item = &pft::Entry> {
-		self.pft.entries().iter()
+		self.pft.entries().iter().filter(|e| e.is_valid())
 	}
 
 	/// Reads a single block by index
@@ -519,25 +521,36 @@ impl<'a, R: Read + Seek> Iterator for DskIterator<'a, R> {
 	type Item = Result<(pft::Entry, Vec<u8>), DskError>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.index >= self.dsk.pft.num_entries() {
-			return None;
+		// Skip invalid entries
+		loop {
+			if self.index >= self.dsk.pft.num_entries() {
+				return None;
+			}
+
+			// Copy the entry (it's a small Copy type)
+			let entry = *self.dsk.pft.get_entry(self.index)?;
+			self.index += 1;
+
+			// Skip invalid entries (zero size and empty name)
+			if !entry.is_valid() {
+				continue;
+			}
+
+			let result = self.dsk.extract(&entry);
+			return Some(result.map(|data| (entry, data)));
 		}
-
-		// Copy the entry (it's a small Copy type)
-		let entry = *self.dsk.pft.get_entry(self.index)?;
-		let result = self.dsk.extract(&entry);
-		self.index += 1;
-
-		Some(result.map(|data| (entry, data)))
 	}
 
 	fn size_hint(&self) -> (usize, Option<usize>) {
+		// We can't know exactly how many valid entries remain without iterating
+		// So we provide a conservative estimate
 		let remaining = self.dsk.pft.num_entries().saturating_sub(self.index);
-		(remaining, Some(remaining))
+		(0, Some(remaining))
 	}
 }
 
-impl<'a, R: Read + Seek> ExactSizeIterator for DskIterator<'a, R> {}
+// Note: We can't implement ExactSizeIterator anymore because we filter invalid entries
+// and can't know the exact count without consuming the iterator
 
 /// Type alias for file-backed DSK files with buffering
 pub type DskFile = File<BufReader<fs::File>>;

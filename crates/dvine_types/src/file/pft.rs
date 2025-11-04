@@ -252,6 +252,21 @@ impl Entry {
 	pub fn blocks_needed(&self) -> u32 {
 		self.actual_size.div_ceil(DSK_BLOCK_SIZE as u32)
 	}
+
+	/// Checks if this entry is valid (has non-zero size or non-empty name)
+	///
+	/// An entry is considered invalid if both:
+	/// - The `actual_size` is 0
+	/// - The `raw_name` is all zeros (empty)
+	pub fn is_valid(&self) -> bool {
+		// Entry is valid if it has a non-zero size
+		if self.actual_size > 0 {
+			return true;
+		}
+
+		// Or if it has a non-empty name
+		self.raw_name.iter().any(|&b| b != 0)
+	}
 }
 
 impl std::fmt::Display for Entry {

@@ -205,29 +205,28 @@ impl Entry {
 
 	/// Loads entry from a byte slice
 	pub fn from_bytes(data: &[u8]) -> Result<Self, PftError> {
-		if data.len() < ENTRY_SIZE {
-			return Err(PftError::InsufficientData {
-				expected: ENTRY_SIZE,
-				actual: data.len(),
-			});
-		}
+		let mut cursor = io::Cursor::new(data);
+		Self::from_reader(&mut cursor)
+	}
 
-		let raw_name = data[0..8].try_into().unwrap();
-		let index = u32::from_le_bytes(data[8..12].try_into().unwrap());
-		let actual_size = u32::from_le_bytes(data[12..16].try_into().unwrap());
+	/// Loads entry from any reader
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
+		let mut raw_name = [0u8; 8];
+		reader.read_exact(&mut raw_name)?;
+
+		let mut index_bytes = [0u8; 4];
+		reader.read_exact(&mut index_bytes)?;
+		let index = u32::from_le_bytes(index_bytes);
+
+		let mut size_bytes = [0u8; 4];
+		reader.read_exact(&mut size_bytes)?;
+		let actual_size = u32::from_le_bytes(size_bytes);
 
 		Ok(Self {
 			raw_name,
 			index,
 			actual_size,
 		})
-	}
-
-	/// Loads entry from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
-		let mut buffer = [0u8; ENTRY_SIZE];
-		reader.read_exact(&mut buffer)?;
-		Self::from_bytes(&buffer).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 	}
 
 	/// Serializes entry to bytes
@@ -333,6 +332,7 @@ impl From<&Entry> for Vec<u8> {
 
 /// PFT File
 /// Contains a header and a list of entries
+/// FIXME: Entry might have invalid data, e.g. zero size but non-zero index
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct File {
 	header: Header,

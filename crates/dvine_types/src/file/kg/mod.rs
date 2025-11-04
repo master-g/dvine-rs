@@ -12,7 +12,7 @@ mod constants {
 	pub const MAGIC: [u8; 2] = [0x4B, 0x47]; // "KG"
 
 	/// Header size for `.KG` files
-	pub const HEADER_SIZE: usize = 20;
+	pub const HEADER_SIZE: usize = 32;
 }
 
 mod opcodes {
@@ -49,14 +49,16 @@ impl Display for Compression {
 /// Header structure for `.KG` files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Header {
-	magic: [u8; 2],
-	version: u8,
-	compression_type: Compression,
-	width: u16,
-	height: u16,
-	reserved_1: [u8; 4],
-	palette_offset: u32,
-	data_offset: u32,
+	magic: [u8; 2],                // 0x00 - 0x01
+	version: u8,                   // 0x02
+	compression_type: Compression, // 0x03
+	width: u16,                    // 0x04 - 0x05
+	height: u16,                   // 0x06 - 0x07
+	reserved_1: [u8; 4],           // 0x08 - 0x0B
+	palette_offset: u32,           // 0x0C - 0x0F
+	data_offset: u32,              // 0x10 - 0x13
+	file_size: u32,                // 0x14 - 0x17
+	reserved_2: [u32; 2],          // 0x18 - 0x1F
 }
 
 impl Default for Header {
@@ -70,6 +72,8 @@ impl Default for Header {
 			reserved_1: [0; 4],
 			palette_offset: 0,
 			data_offset: 0,
+			file_size: 0,
+			reserved_2: [0; 2],
 		}
 	}
 }
@@ -91,6 +95,50 @@ impl Header {
 	/// Returns the compression type used in the `.KG` file.
 	pub fn compression_type(&self) -> Compression {
 		self.compression_type
+	}
+
+	/// Returns the total file size in bytes.
+	pub fn file_size(&self) -> u32 {
+		self.file_size
+	}
+
+	/// Returns the size of the padding in bytes, if any.
+	pub fn padding_size(&self) -> Option<usize> {
+		if self.palette_offset > 0 && self.palette_offset - constants::HEADER_SIZE as u32 > 0 {
+			Some((self.palette_offset - constants::HEADER_SIZE as u32) as usize)
+		} else {
+			None
+		}
+	}
+
+	/// Returns true if the image has padding
+	pub fn has_padding(&self) -> bool {
+		self.padding_size().is_some()
+	}
+
+	/// Creates default padding bytes for the image
+	pub fn create_default_padding(&self) -> Vec<u8> {
+		#[repr(C)]
+		struct DefaultPadding {
+			zero_0: u32,
+			width: u32,
+			height: u32,
+			zero_1: u32,
+		}
+		let padding = DefaultPadding {
+			zero_0: 0,
+			width: self.width as u32,
+			height: self.height as u32,
+			zero_1: 0,
+		};
+
+		let mut bytes = Vec::with_capacity(std::mem::size_of::<DefaultPadding>());
+		bytes.extend_from_slice(&padding.zero_0.to_le_bytes());
+		bytes.extend_from_slice(&padding.width.to_le_bytes());
+		bytes.extend_from_slice(&padding.height.to_le_bytes());
+		bytes.extend_from_slice(&padding.zero_1.to_le_bytes());
+
+		bytes
 	}
 
 	/// Returns the width of the image in pixels.
@@ -144,6 +192,11 @@ impl Header {
 		let palette_offset = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
 		let data_offset = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
 
+		let file_size = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
+		let mut reserved_2 = [0u32; 2];
+		reserved_2[0] = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+		reserved_2[1] = u32::from_le_bytes([data[28], data[29], data[30], data[31]]);
+
 		Ok(Header {
 			magic,
 			version,
@@ -153,6 +206,8 @@ impl Header {
 			reserved_1,
 			palette_offset,
 			data_offset,
+			file_size,
+			reserved_2,
 		})
 	}
 
@@ -213,7 +268,8 @@ impl Display for Header {
 			- Width: {} pixels\n\
 			- Height: {} pixels\n\
 			- Palette Offset: {} bytes\n\
-			- Image Data Offset: {} bytes",
+			- Image Data Offset: {} bytes\n\
+			- File Size: {} bytes\n",
 			self.magic,
 			self.version,
 			self.compression_type,
@@ -221,15 +277,24 @@ impl Display for Header {
 			self.height,
 			self.palette_offset,
 			self.data_offset,
+			self.file_size
 		)
 	}
 }
+
+type Plalette = [[u8; 4]; 256];
 
 /// Representation of a decoded `.KG` file
 #[derive(Debug)]
 pub struct File {
 	/// Header of the `.KG` file
 	header: Header,
+
+	/// Padding for alignment
+	padding: Option<Vec<u8>>,
+
+	/// Palette data, if present
+	palette: Option<Plalette>,
 
 	/// Pixel data of the `.KG` file, in RGB format
 	pixels: Vec<u8>,
@@ -241,6 +306,17 @@ impl File {
 		&self.header
 	}
 
+	/// Returns a reference to the padding of the `.KG` file, if present
+	pub fn padding(&self) -> Option<&Vec<u8>> {
+		self.padding.as_ref()
+	}
+
+	/// Returns a reference to the palette of the `.KG` file, if present
+	/// Returns `None` if the file does not contain a palette
+	pub fn palette(&self) -> Option<&Plalette> {
+		self.palette.as_ref()
+	}
+
 	/// Returns a reference to the pixel data of the `.KG` file
 	pub fn pixels(&self) -> &[u8] {
 		&self.pixels
@@ -249,12 +325,7 @@ impl File {
 	/// Opens and parses a `.KG` file from the specified path
 	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, KgError> {
 		let data = std::fs::read(path)?;
-		let decompress_data = decode::decompress(&data)?;
-
-		Ok(Self {
-			header: decompress_data.0,
-			pixels: decompress_data.1,
-		})
+		decode::decompress(&data)
 	}
 
 	/// Creates a `.KG` file from any reader
@@ -265,11 +336,6 @@ impl File {
 	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, KgError> {
 		let mut data = Vec::new();
 		reader.read_to_end(&mut data)?;
-		let decompress_data = decode::decompress(&data)?;
-
-		Ok(Self {
-			header: decompress_data.0,
-			pixels: decompress_data.1,
-		})
+		decode::decompress(&data)
 	}
 }

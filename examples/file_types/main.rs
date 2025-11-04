@@ -25,7 +25,7 @@ fn main() {
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),
-			"kg" => kg::test(),
+			"kg" => kg::test(true),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!("Available examples: font, item");

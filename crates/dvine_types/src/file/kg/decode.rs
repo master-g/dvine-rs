@@ -300,10 +300,13 @@ fn apply_palette(indexed_data: &[u8], palette: Option<&[[u8; 4]; 256]>) -> Vec<u
 
 /// Decompress KG format data from a byte slice
 /// Returns (Header, RGB data)
-pub fn decompress(data: &[u8]) -> Result<(Header, Vec<u8>), KgError> {
+pub fn decompress(data: &[u8]) -> Result<super::File, KgError> {
 	let header = Header::from_bytes(data)?;
 
 	let compression_type = header.compression_type();
+
+	let padding =
+		header.padding_size().map(|size| data[Header::SIZE..Header::SIZE + size].to_vec());
 
 	let palette = load_palette(data, &header);
 	let has_palette = palette.is_some();
@@ -343,5 +346,10 @@ pub fn decompress(data: &[u8]) -> Result<(Header, Vec<u8>), KgError> {
 		state.output_buffer
 	};
 
-	Ok((header, final_data))
+	Ok(super::File {
+		header,
+		padding,
+		palette,
+		pixels: final_data,
+	})
 }

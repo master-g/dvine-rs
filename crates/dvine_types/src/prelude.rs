@@ -21,6 +21,10 @@ pub use crate::file::{
 	// DSK types
 	DskFile,
 	DvFileError,
+
+	// EFC types
+	EfcFile,
+
 	Entry,
 	FileType,
 

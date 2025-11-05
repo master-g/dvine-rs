@@ -1,5 +1,6 @@
 //! Test file types for `dvine-rs`
 
+mod efc;
 mod extract;
 mod font;
 mod item;
@@ -22,6 +23,7 @@ fn main() {
 				};
 				extract::extract_pft_dsk(filename);
 			}
+			"efc" => efc::test(),
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),

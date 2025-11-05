@@ -153,7 +153,7 @@ impl<R: Read + Seek> File<R> {
 	/// # Errors
 	///
 	/// Returns an error if seeking fails
-	pub fn size(&mut self) -> io::Result<u64> {
+	pub fn size(&mut self) -> Result<u64, DvFileError> {
 		let current = self.reader.stream_position()?;
 		let size = self.reader.seek(SeekFrom::End(0))?;
 		self.reader.seek(SeekFrom::Start(current))?;
@@ -165,7 +165,7 @@ impl<R: Read + Seek> File<R> {
 	/// # Errors
 	///
 	/// Returns an error if determining the size fails
-	pub fn num_blocks(&mut self) -> io::Result<usize> {
+	pub fn num_blocks(&mut self) -> Result<usize, DvFileError> {
 		Ok((self.size()? / DSK_BLOCK_SIZE as u64) as usize)
 	}
 
@@ -330,11 +330,9 @@ impl<R: Read + Seek> File<R> {
 	/// - An I/O error occurs
 	pub fn extract_by_name(&mut self, name: &str) -> Result<Vec<u8>, DvFileError> {
 		// Get entry information before borrowing self mutably
-		let entry = *self.pft.find_entry(name).ok_or_else(|| {
-			DvFileError::io_error(
-				FileType::Dsk,
-				io::Error::new(io::ErrorKind::NotFound, format!("File '{}' not found", name)),
-			)
+		let entry = *self.pft.find_entry(name).ok_or(DvFileError::EntryNotFound {
+			file_type: FileType::Dsk,
+			message: format!("File '{}' not found in DSK container", name),
 		})?;
 
 		self.extract(&entry)

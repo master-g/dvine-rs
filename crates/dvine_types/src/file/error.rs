@@ -14,8 +14,8 @@
 //!
 //! fn handle_error(err: DvFileError) {
 //!     match err.file_type() {
-//!         FileType::Kg => println!("KG file error: {}", err),
-//!         FileType::Pft => println!("PFT file error: {}", err),
+//!         Some(FileType::Kg) => println!("KG file error: {}", err),
+//!         Some(FileType::Pft) => println!("PFT file error: {}", err),
 //!         _ => println!("File error: {}", err),
 //!     }
 //! }
@@ -209,30 +209,31 @@ pub enum DvFileError {
 		message: String,
 	},
 
-	/// IO error
-	#[error("{file_type} error: I/O error: {source}")]
-	IOError {
+	/// Entry not found
+	#[error("{file_type} error: Entry not found: {message}")]
+	EntryNotFound {
 		/// File type that encountered the error
 		file_type: FileType,
-		/// The underlying I/O error
-		#[source]
-		source: std::io::Error,
+		/// Error message
+		message: String,
 	},
 
+	/// hound library error
+	#[error(transparent)]
+	HoundError(#[from] hound::Error),
+
+	/// IO error
+	#[error(transparent)]
+	IOError(#[from] std::io::Error),
+
 	/// Slice conversion error
-	#[error("{file_type} error: Slice conversion failed: {source}")]
-	TryFromSliceError {
-		/// File type that encountered the error
-		file_type: FileType,
-		/// The underlying conversion error
-		#[source]
-		source: std::array::TryFromSliceError,
-	},
+	#[error(transparent)]
+	TryFromSliceError(#[from] std::array::TryFromSliceError),
 }
 
 impl DvFileError {
 	/// Returns the file type associated with this error
-	pub fn file_type(&self) -> FileType {
+	pub fn file_type(&self) -> Option<FileType> {
 		match self {
 			Self::InsufficientData {
 				file_type,
@@ -302,20 +303,17 @@ impl DvFileError {
 				file_type,
 				..
 			}
-			| Self::IOError {
+			| Self::EntryNotFound {
 				file_type,
 				..
-			}
-			| Self::TryFromSliceError {
-				file_type,
-				..
-			} => *file_type,
+			} => Some(*file_type),
+			_ => None,
 		}
 	}
 
 	/// Returns true if this is an I/O error
 	pub fn is_io_error(&self) -> bool {
-		matches!(self, Self::IOError { .. })
+		matches!(self, Self::IOError(_))
 	}
 
 	/// Returns true if this is an insufficient data error
@@ -338,14 +336,6 @@ impl DvFileError {
 		)
 	}
 
-	/// Create an I/O error
-	pub fn io_error(file_type: FileType, source: std::io::Error) -> Self {
-		Self::IOError {
-			file_type,
-			source,
-		}
-	}
-
 	/// Create an insufficient data error
 	pub fn insufficient_data(file_type: FileType, expected: usize, actual: usize) -> Self {
 		Self::InsufficientData {
@@ -361,28 +351,6 @@ impl DvFileError {
 			file_type,
 			expected: expected.to_vec(),
 			actual: actual.to_vec(),
-		}
-	}
-}
-
-// From implementations for automatic error conversion
-
-impl From<std::io::Error> for DvFileError {
-	fn from(err: std::io::Error) -> Self {
-		// We don't have file type context here, so we use a generic type
-		// In practice, this should be caught and converted with proper context
-		Self::IOError {
-			file_type: FileType::Dsk, // Default to DSK as it's most common
-			source: err,
-		}
-	}
-}
-
-impl From<std::array::TryFromSliceError> for DvFileError {
-	fn from(err: std::array::TryFromSliceError) -> Self {
-		Self::TryFromSliceError {
-			file_type: FileType::Pft, // Default to PFT as it's most common for slice conversions
-			source: err,
 		}
 	}
 }

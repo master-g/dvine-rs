@@ -6,8 +6,8 @@ rust-version.workspace = true
 
 [dependencies]
 encoding_rs.workspace = true
-thiserror = { workspace = true }
-log = { workspace = true }
+hound.workspace = true
+thiserror.workspace = true
 
 
 [lints]

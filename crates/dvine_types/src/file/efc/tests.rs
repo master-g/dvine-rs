@@ -182,9 +182,9 @@ fn test_to_bytes_with_effects() {
 
 	// Create a simple step table
 	let mut step_table = [0i16; 89];
-	for i in 0..89 {
+	(0..89).for_each(|i| {
 		step_table[i] = 7 + i as i16 * 8;
-	}
+	});
 
 	let sound = DecodedSound {
 		id: 0,
@@ -218,9 +218,9 @@ fn test_to_bytes_with_effects() {
 #[test]
 fn test_decoded_sound_to_bytes() {
 	let mut step_table = [0i16; 89];
-	for i in 0..89 {
+	(0..89).for_each(|i| {
 		step_table[i] = 7 + i as i16 * 8;
-	}
+	});
 
 	let sound = DecodedSound {
 		id: 0,
@@ -254,9 +254,9 @@ fn test_decoded_sound_to_bytes() {
 #[test]
 fn test_encode_decode_roundtrip() {
 	let mut step_table = [0i16; 89];
-	for i in 0..89 {
+	(0..89).for_each(|i| {
 		step_table[i] = 7 + i as i16 * 8;
-	}
+	});
 
 	let original_sound = DecodedSound {
 		id: 5,
@@ -315,9 +315,9 @@ fn test_write_and_read_roundtrip() {
 	let mut builder = FileBuilder::new();
 
 	let mut step_table = [0i16; 89];
-	for i in 0..89 {
+	(0..89).for_each(|i| {
 		step_table[i] = 7 + i as i16 * 8;
-	}
+	});
 
 	let sound1 = DecodedSound {
 		id: 10,

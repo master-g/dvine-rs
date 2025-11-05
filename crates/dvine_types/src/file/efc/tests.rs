@@ -3,7 +3,7 @@
 use super::*;
 use std::io::{Cursor, Read};
 
-fn create_test_efc() -> File<Cursor<Vec<u8>>> {
+fn create_test_efc() -> File<std::io::BufReader<Cursor<Vec<u8>>>> {
 	// Create a minimal EFC file with index table
 	let mut data = Vec::new();
 
@@ -17,7 +17,7 @@ fn create_test_efc() -> File<Cursor<Vec<u8>>> {
 		data.extend_from_slice(&0u32.to_le_bytes());
 	}
 
-	let reader = Cursor::new(data);
+	let reader = std::io::BufReader::new(Cursor::new(data));
 	File::from_reader(reader).unwrap()
 }
 
@@ -68,15 +68,15 @@ fn test_list_effects() {
 
 #[test]
 fn test_new() {
-	let efc = File::new();
-	assert_eq!(efc.effect_count(), 0);
-	assert!(!efc.has_effect(0));
-	assert!(!efc.has_effect(255));
+	let builder = FileBuilder::new();
+	assert_eq!(builder.effect_count(), 0);
+	assert!(!builder.has_effect(0));
+	assert!(!builder.has_effect(255));
 }
 
 #[test]
 fn test_insert_effect() {
-	let mut efc = File::new();
+	let mut builder = FileBuilder::new();
 
 	let sound = DecodedSound {
 		id: 42,
@@ -95,15 +95,15 @@ fn test_insert_effect() {
 		pcm_data: vec![0i16; 10],
 	};
 
-	assert!(!efc.has_effect(42));
-	efc.insert_effect(42, sound).unwrap();
-	assert!(efc.has_effect(42));
-	assert_eq!(efc.effect_count(), 1);
+	assert!(!builder.has_effect(42));
+	builder.insert_effect(42, sound).unwrap();
+	assert!(builder.has_effect(42));
+	assert_eq!(builder.effect_count(), 1);
 }
 
 #[test]
 fn test_insert_effect_out_of_range() {
-	let mut efc = File::new();
+	let mut builder = FileBuilder::new();
 
 	let sound = DecodedSound {
 		id: 0,
@@ -122,13 +122,13 @@ fn test_insert_effect_out_of_range() {
 		pcm_data: vec![0i16; 10],
 	};
 
-	let result = efc.insert_effect(256, sound);
+	let result = builder.insert_effect(256, sound);
 	assert!(result.is_err());
 }
 
 #[test]
 fn test_remove_effect() {
-	let mut efc = File::new();
+	let mut builder = FileBuilder::new();
 
 	let sound = DecodedSound {
 		id: 10,
@@ -147,19 +147,19 @@ fn test_remove_effect() {
 		pcm_data: vec![0i16; 10],
 	};
 
-	efc.insert_effect(10, sound).unwrap();
-	assert!(efc.has_effect(10));
-	assert_eq!(efc.effect_count(), 1);
+	builder.insert_effect(10, sound).unwrap();
+	assert!(builder.has_effect(10));
+	assert_eq!(builder.effect_count(), 1);
 
-	efc.remove_effect(10);
-	assert!(!efc.has_effect(10));
-	assert_eq!(efc.effect_count(), 0);
+	builder.remove_effect(10);
+	assert!(!builder.has_effect(10));
+	assert_eq!(builder.effect_count(), 0);
 }
 
 #[test]
 fn test_to_bytes_empty() {
-	let efc = File::new();
-	let bytes = efc.to_bytes().unwrap();
+	let builder = FileBuilder::new();
+	let bytes = builder.to_bytes().unwrap();
 
 	// Should only contain the index table (256 * 4 = 1024 bytes)
 	assert_eq!(bytes.len(), 256 * 4);
@@ -178,7 +178,7 @@ fn test_to_bytes_empty() {
 
 #[test]
 fn test_to_bytes_with_effects() {
-	let mut efc = File::new();
+	let mut builder = FileBuilder::new();
 
 	// Create a simple step table
 	let mut step_table = [0i16; 89];
@@ -203,9 +203,9 @@ fn test_to_bytes_with_effects() {
 		pcm_data: vec![0, 100, 200, 150, 50, -100, -200, -150, -50, 0],
 	};
 
-	efc.insert_effect(0, sound).unwrap();
+	builder.insert_effect(0, sound).unwrap();
 
-	let bytes = efc.to_bytes().unwrap();
+	let bytes = builder.to_bytes().unwrap();
 
 	// Should contain index table + at least one effect
 	assert!(bytes.len() > 256 * 4);
@@ -312,7 +312,7 @@ fn test_encode_decode_roundtrip() {
 
 #[test]
 fn test_write_and_read_roundtrip() {
-	let mut efc = File::new();
+	let mut builder = FileBuilder::new();
 
 	let mut step_table = [0i16; 89];
 	for i in 0..89 {
@@ -353,14 +353,14 @@ fn test_write_and_read_roundtrip() {
 		pcm_data: vec![1000, -1000, 500, -500, 250, -250, 125, -125, 0, 0],
 	};
 
-	efc.insert_effect(10, sound1).unwrap();
-	efc.insert_effect(20, sound2).unwrap();
+	builder.insert_effect(10, sound1).unwrap();
+	builder.insert_effect(20, sound2).unwrap();
 
 	// Serialize to bytes
-	let bytes = efc.to_bytes().unwrap();
+	let bytes = builder.to_bytes().unwrap();
 
 	// Read back
-	let cursor = Cursor::new(bytes);
+	let cursor = std::io::BufReader::new(Cursor::new(bytes));
 	let mut efc2 = File::from_reader(cursor).unwrap();
 
 	assert_eq!(efc2.effect_count(), 2);

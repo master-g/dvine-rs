@@ -7,7 +7,7 @@
 //! 4. Creating a new EFC file with both effects
 //! 5. Using hexdump to verify the encoded data matches the original
 
-use dvine_rs::prelude::file::{DecodedSound, EfcFile};
+use dvine_rs::prelude::file::{DecodedSound, EfcFile, EfcFileBuilder};
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Seek};
@@ -59,23 +59,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	// Step 5: Create a new EFC file with both effects
 	println!("Step 5: Creating new EFC file with both effects");
-	let mut new_efc = EfcFile::new();
+	let mut builder = EfcFileBuilder::new();
 
-	// Insert the original sound (clone it since we moved the original earlier)
+	// Insert the original sound
 	// We need to extract it again from the original file
-	let original_for_new = original_efc.extract(source_id)?.clone();
-	new_efc.insert_effect(source_id, original_for_new)?;
+	let original_for_new = original_efc.extract(source_id)?;
+	builder.insert_effect(source_id, original_for_new)?;
 	println!("  ✓ Inserted original effect at ID {}", source_id);
 
 	// Insert the re-encoded sound
-	new_efc.insert_effect(target_id, cloned_sound)?;
+	builder.insert_effect(target_id, cloned_sound)?;
 	println!("  ✓ Inserted re-encoded effect at ID {}\n", target_id);
 
 	// Step 6: Save the new EFC file
 	let output_path = bin_root.join("test_encoded.EFC");
 	println!("Step 6: Saving new EFC file");
 	println!("  Path: {}", output_path.display());
-	new_efc.save_to_file(&output_path)?;
+	builder.save_to_file(&output_path)?;
 	println!("  ✓ Saved successfully\n");
 
 	// Step 7: Load the new file and extract both effects

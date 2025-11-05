@@ -7,16 +7,18 @@
 //! - Save the EFC file
 //! - Load it back and verify the contents
 
-use dvine_rs::prelude::file::{AdpcmDataHeader, DecodedSound, EfcFile, SoundDataHeader};
+use dvine_rs::prelude::file::{
+	AdpcmDataHeader, DecodedSound, EfcFile, EfcFileBuilder, SoundDataHeader,
+};
 use std::error::Error;
 
 pub fn run() -> Result<(), Box<dyn Error>> {
 	println!("=== EFC File Builder Example ===\n");
 
-	// Create a new empty EFC file
-	let mut efc = EfcFile::new();
-	println!("Created new empty EFC file");
-	println!("Initial effect count: {}\n", efc.effect_count());
+	// Create a new file builder
+	let mut builder = EfcFileBuilder::new();
+	println!("Created new file builder");
+	println!("Initial effect count: {}\n", builder.effect_count());
 
 	// Create a standard step table for IMA ADPCM
 	// This is a typical step table used in IMA ADPCM encoding
@@ -28,7 +30,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 	// Example 1: Create a simple beep sound effect
 	println!("Creating Effect #10: Simple Beep");
 	let beep_sound = create_beep_effect(10, &step_table);
-	efc.insert_effect(10, beep_sound)?;
+	builder.insert_effect(10, beep_sound)?;
 	println!("  - Inserted at ID 10");
 	println!("  - Duration: ~100 samples at 22050 Hz");
 	println!("  - Priority: 100\n");
@@ -36,7 +38,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 	// Example 2: Create a low-frequency rumble
 	println!("Creating Effect #25: Low Rumble");
 	let rumble_sound = create_rumble_effect(25, &step_table);
-	efc.insert_effect(25, rumble_sound)?;
+	builder.insert_effect(25, rumble_sound)?;
 	println!("  - Inserted at ID 25");
 	println!("  - Duration: ~200 samples at 22050 Hz");
 	println!("  - Priority: 50\n");
@@ -44,22 +46,22 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 	// Example 3: Create a high-priority alert sound
 	println!("Creating Effect #100: Alert");
 	let alert_sound = create_alert_effect(100, &step_table);
-	efc.insert_effect(100, alert_sound)?;
+	builder.insert_effect(100, alert_sound)?;
 	println!("  - Inserted at ID 100");
 	println!("  - Duration: ~150 samples at 44100 Hz");
 	println!("  - Priority: 200 (high priority)\n");
 
 	// Display current state
-	println!("Current EFC file status:");
-	println!("  - Total effects: {}", efc.effect_count());
-	println!("  - Has effect 10: {}", efc.has_effect(10));
-	println!("  - Has effect 25: {}", efc.has_effect(25));
-	println!("  - Has effect 100: {}\n", efc.has_effect(100));
+	println!("Current file builder status:");
+	println!("  - Total effects: {}", builder.effect_count());
+	println!("  - Has effect 10: {}", builder.has_effect(10));
+	println!("  - Has effect 25: {}", builder.has_effect(25));
+	println!("  - Has effect 100: {}\n", builder.has_effect(100));
 
 	// Save to file
 	let output_path = "bin/efc_builder_output.EFC";
 	println!("Saving EFC file to: {}", output_path);
-	efc.save_to_file(output_path)?;
+	builder.save_to_file(output_path)?;
 	println!("  - Saved successfully!\n");
 
 	// Load it back and verify
@@ -85,20 +87,20 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
 	// Demonstrate removing an effect
 	println!("\nRemoving effect #25...");
-	let mut efc_modified = EfcFile::new();
-	efc_modified.insert_effect(10, create_beep_effect(10, &step_table))?;
-	efc_modified.insert_effect(25, create_rumble_effect(25, &step_table))?;
-	efc_modified.insert_effect(100, create_alert_effect(100, &step_table))?;
+	let mut builder_modified = EfcFileBuilder::new();
+	builder_modified.insert_effect(10, create_beep_effect(10, &step_table))?;
+	builder_modified.insert_effect(25, create_rumble_effect(25, &step_table))?;
+	builder_modified.insert_effect(100, create_alert_effect(100, &step_table))?;
 
-	println!("  - Before removal: {} effects", efc_modified.effect_count());
-	efc_modified.remove_effect(25);
-	println!("  - After removal: {} effects", efc_modified.effect_count());
-	println!("  - Has effect 25: {}", efc_modified.has_effect(25));
+	println!("  - Before removal: {} effects", builder_modified.effect_count());
+	builder_modified.remove_effect(25);
+	println!("  - After removal: {} effects", builder_modified.effect_count());
+	println!("  - Has effect 25: {}", builder_modified.has_effect(25));
 
 	// Save modified version
 	let modified_path = "bin/efc_builder_modified.EFC";
 	println!("\nSaving modified EFC file to: {}", modified_path);
-	efc_modified.save_to_file(modified_path)?;
+	builder_modified.save_to_file(modified_path)?;
 	println!("  - Saved successfully!");
 
 	// Demonstrate iterating over effects

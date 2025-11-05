@@ -20,9 +20,6 @@ pub struct File<R> {
 
 	/// Index table mapping effect IDs to file offsets
 	pub(super) index_table: [u32; MAX_EFFECTS],
-
-	/// Cache for decoded effects
-	pub(super) cache: Box<[Option<Box<DecodedSound>>; MAX_EFFECTS]>,
 }
 
 impl<R: Read + Seek> File<R> {
@@ -35,12 +32,9 @@ impl<R: Read + Seek> File<R> {
 			*entry = u32::from_le_bytes(buffer);
 		}
 
-		let cache = Box::new(std::array::from_fn(|_| None));
-
 		Ok(Self {
 			reader,
 			index_table,
-			cache,
 		})
 	}
 
@@ -87,12 +81,10 @@ impl<R: Read + Seek> File<R> {
 	}
 
 	/// Extracts and decodes the sound effect with the given ID
-	pub fn extract(&mut self, id: usize) -> Result<&DecodedSound, DvFileError> {
-		// Check cache first
-		if self.cache[id].is_some() {
-			return Ok(self.cache[id].as_ref().unwrap());
-		}
-
+	///
+	/// Returns an owned `DecodedSound`. If you need to extract the same effect
+	/// multiple times, consider caching the result yourself.
+	pub fn extract(&mut self, id: usize) -> Result<DecodedSound, DvFileError> {
 		let (offset, size) = self.get_offset(id)?;
 
 		// move reader to the effect offset
@@ -129,19 +121,13 @@ impl<R: Read + Seek> File<R> {
 			adpcm_header.sample_count,
 		)?;
 
-		// Create decoded sound
-		let decoded = DecodedSound {
+		// Create and return decoded sound
+		Ok(DecodedSound {
 			id,
 			sound_header,
 			adpcm_header,
 			pcm_data,
-		};
-
-		// Store in cache
-		self.cache[id] = Some(Box::new(decoded));
-
-		// Return reference
-		Ok(self.cache[id].as_ref().unwrap())
+		})
 	}
 
 	/// Returns a list of all available effect IDs and their offsets
@@ -177,20 +163,6 @@ impl<R: Read + Seek> File<R> {
 		self.index_table.iter().filter(|&&offset| offset != 0).count()
 	}
 
-	/// Clears the cache for a specific effect
-	pub fn clear_cache(&mut self, id: usize) {
-		if id < MAX_EFFECTS {
-			self.cache[id] = None;
-		}
-	}
-
-	/// Clears all cached effects
-	pub fn clear_all_cache(&mut self) {
-		for entry in self.cache.iter_mut() {
-			*entry = None;
-		}
-	}
-
 	/// Returns an iterator over effect information
 	///
 	/// This iterator returns basic information about each effect without decoding.
@@ -220,8 +192,8 @@ impl<R: Read + Seek> File<R> {
 	/// Returns an iterator over decoded sounds
 	///
 	/// This iterator decodes effects on-demand as they are accessed.
-	/// Returns cloned `DecodedSound` instances. For cached access without cloning,
-	/// use `extract()` directly.
+	/// Each call to `next()` performs decoding, so consider caching results
+	/// if you need to access the same effect multiple times.
 	///
 	/// # Examples
 	///

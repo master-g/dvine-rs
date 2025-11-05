@@ -52,7 +52,7 @@ impl<'a> Iterator for EffectInfoIter<'a> {
 /// This iterator decodes effects on-demand. If an effect fails to decode,
 /// the iterator returns an error for that effect and continues to the next one.
 ///
-/// Returns owned `DecodedSound` instances (cloned from cache).
+/// Returns owned `DecodedSound` instances.
 pub struct DecodedSoundIter<'a, R> {
 	pub(super) file: &'a mut File<R>,
 	pub(super) current_id: usize,
@@ -68,12 +68,8 @@ impl<'a, R: Read + Seek> Iterator for DecodedSoundIter<'a, R> {
 			self.current_id += 1;
 
 			if self.file.index_table[id] != 0 {
-				// Try to extract the effect
-				let result = self.file.extract(id);
-				return Some(match result {
-					Ok(sound) => Ok(sound.clone()),
-					Err(e) => Err(e),
-				});
+				// Extract the effect (now returns owned value)
+				return Some(self.file.extract(id));
 			}
 		}
 

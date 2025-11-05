@@ -50,11 +50,11 @@
 //! ## Creating a new EFC file
 //!
 //! ```no_run
-//! use dvine_types::file::efc::{File, DecodedSound, SoundDataHeader, AdpcmDataHeader};
+//! use dvine_types::file::efc::{FileBuilder, DecodedSound, SoundDataHeader, AdpcmDataHeader};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create a new empty EFC file
-//! let mut efc = File::new();
+//! // Create a new file builder
+//! let mut builder = FileBuilder::new();
 //!
 //! // Create a step table for ADPCM encoding
 //! let mut step_table = [0i16; 89];
@@ -81,10 +81,10 @@
 //! };
 //!
 //! // Insert the sound effect
-//! efc.insert_effect(10, sound)?;
+//! builder.insert_effect(10, sound)?;
 //!
 //! // Save to file
-//! efc.save_to_file("output.EFC")?;
+//! builder.save_to_file("output.EFC")?;
 //! # Ok(())
 //! # }
 //! ```
@@ -109,25 +109,25 @@
 //! ## Modifying an existing EFC file
 //!
 //! ```no_run
-//! use dvine_types::file::efc::File;
+//! use dvine_types::file::efc::{File, FileBuilder};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Open an existing file
 //! let mut efc = File::open("SOUND.EFC")?;
 //!
 //! // Extract an effect
-//! let sound = efc.extract(10)?.clone();
+//! let sound = efc.extract(10)?;
 //!
 //! // Modify it (e.g., change priority)
 //! let mut modified_sound = sound;
 //! modified_sound.sound_header.priority = 200;
 //!
 //! // Create a new file with modifications
-//! let mut new_efc = File::new();
-//! new_efc.insert_effect(10, modified_sound)?;
+//! let mut builder = FileBuilder::new();
+//! builder.insert_effect(10, modified_sound)?;
 //!
 //! // Save the modified file
-//! new_efc.save_to_file("MODIFIED.EFC")?;
+//! builder.save_to_file("MODIFIED.EFC")?;
 //! # Ok(())
 //! # }
 //! ```
@@ -190,6 +190,7 @@ pub mod decoder;
 pub mod encoder;
 
 // Re-export public types and constants
+pub use self::builder::FileBuilder;
 pub use self::constants::*;
 pub use self::file::File;
 pub use self::iterator::{DecodedSoundIter, EffectInfoIter};

@@ -3,16 +3,26 @@
 //! This module contains functionality for creating new EFC files,
 //! modifying existing files, and serializing them to disk.
 
+use std::collections::HashMap;
 use std::fs::File as FsFile;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::Path;
 
 use crate::file::{DvFileError, FileType};
 
-use super::File;
 use super::constants::MAX_EFFECTS;
 use super::encoder;
 use super::types::DecodedSound;
+
+/// Builder for constructing EFC files
+///
+/// This structure allows you to build new EFC files by inserting sound effects
+/// and then serializing them to disk.
+#[derive(Debug, Clone)]
+pub struct FileBuilder {
+	/// Map of effect ID to decoded sound data
+	effects: HashMap<usize, DecodedSound>,
+}
 
 impl DecodedSound {
 	/// Encodes the PCM data back to ADPCM format
@@ -64,32 +74,26 @@ impl DecodedSound {
 	}
 }
 
-impl Default for File<Cursor<Vec<u8>>> {
+impl Default for FileBuilder {
 	fn default() -> Self {
 		Self::new()
 	}
 }
 
-impl File<Cursor<Vec<u8>>> {
-	/// Creates a new empty `.EFC` file
+impl FileBuilder {
+	/// Creates a new empty EFC file builder
 	///
 	/// # Examples
 	///
 	/// ```
-	/// use dvine_types::file::efc::File;
+	/// use dvine_types::file::efc::FileBuilder;
 	///
-	/// let efc = File::new();
-	/// assert_eq!(efc.effect_count(), 0);
+	/// let builder = FileBuilder::new();
+	/// assert_eq!(builder.effect_count(), 0);
 	/// ```
 	pub fn new() -> Self {
-		let index_table = [0u32; MAX_EFFECTS];
-		let cache = Box::new(std::array::from_fn(|_| None));
-		let reader = Cursor::new(Vec::new());
-
 		Self {
-			reader,
-			index_table,
-			cache,
+			effects: HashMap::new(),
 		}
 	}
 
@@ -102,10 +106,10 @@ impl File<Cursor<Vec<u8>>> {
 	/// # Examples
 	///
 	/// ```no_run
-	/// use dvine_types::file::efc::{File, DecodedSound, SoundDataHeader, AdpcmDataHeader};
+	/// use dvine_types::file::efc::{FileBuilder, DecodedSound, SoundDataHeader, AdpcmDataHeader};
 	///
 	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-	/// let mut efc = File::new();
+	/// let mut builder = FileBuilder::new();
 	///
 	/// let sound = DecodedSound {
 	///     id: 0,
@@ -124,8 +128,8 @@ impl File<Cursor<Vec<u8>>> {
 	///     pcm_data: vec![0i16; 1000],
 	/// };
 	///
-	/// efc.insert_effect(42, sound)?;
-	/// assert!(efc.has_effect(42));
+	/// builder.insert_effect(42, sound)?;
+	/// assert!(builder.has_effect(42));
 	/// # Ok(())
 	/// # }
 	/// ```
@@ -137,13 +141,20 @@ impl File<Cursor<Vec<u8>>> {
 			});
 		}
 
-		// Store in cache
-		self.cache[id] = Some(Box::new(sound));
-
-		// Mark as present in index table (actual offset will be calculated in to_bytes)
-		self.index_table[id] = 1; // Non-zero to indicate presence
+		// Store effect
+		self.effects.insert(id, sound);
 
 		Ok(())
+	}
+
+	/// Checks if an effect with the given ID exists
+	pub fn has_effect(&self, id: usize) -> bool {
+		self.effects.contains_key(&id)
+	}
+
+	/// Returns the number of effects in the builder
+	pub fn effect_count(&self) -> usize {
+		self.effects.len()
 	}
 
 	/// Removes a sound effect at the given ID
@@ -154,17 +165,14 @@ impl File<Cursor<Vec<u8>>> {
 	/// # Examples
 	///
 	/// ```
-	/// use dvine_types::file::efc::File;
+	/// use dvine_types::file::efc::FileBuilder;
 	///
-	/// let mut efc = File::new();
-	/// efc.remove_effect(42);
-	/// assert!(!efc.has_effect(42));
+	/// let mut builder = FileBuilder::new();
+	/// builder.remove_effect(42);
+	/// assert!(!builder.has_effect(42));
 	/// ```
 	pub fn remove_effect(&mut self, id: usize) {
-		if id < MAX_EFFECTS {
-			self.cache[id] = None;
-			self.index_table[id] = 0;
-		}
+		self.effects.remove(&id);
 	}
 
 	/// Serializes the `.EFC` file to bytes
@@ -175,11 +183,11 @@ impl File<Cursor<Vec<u8>>> {
 	/// # Examples
 	///
 	/// ```
-	/// use dvine_types::file::efc::File;
+	/// use dvine_types::file::efc::FileBuilder;
 	///
 	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-	/// let efc = File::new();
-	/// let bytes = efc.to_bytes()?;
+	/// let builder = FileBuilder::new();
+	/// let bytes = builder.to_bytes()?;
 	/// assert_eq!(bytes.len(), 256 * 4); // Index table only for empty file
 	/// # Ok(())
 	/// # }
@@ -196,7 +204,7 @@ impl File<Cursor<Vec<u8>>> {
 		let mut current_offset = index_table_size as u32;
 
 		for id in 0..MAX_EFFECTS {
-			if let Some(ref sound) = self.cache[id] {
+			if let Some(sound) = self.effects.get(&id) {
 				// Record offset in index table
 				new_index_table[id] = current_offset;
 
@@ -225,13 +233,13 @@ impl File<Cursor<Vec<u8>>> {
 	/// # Examples
 	///
 	/// ```no_run
-	/// use dvine_types::file::efc::File;
+	/// use dvine_types::file::efc::FileBuilder;
 	/// use std::fs::File as FsFile;
 	///
 	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-	/// let efc = File::new();
+	/// let builder = FileBuilder::new();
 	/// let mut file = FsFile::create("output.EFC")?;
-	/// efc.write_to(&mut file)?;
+	/// builder.write_to(&mut file)?;
 	/// # Ok(())
 	/// # }
 	/// ```
@@ -246,11 +254,11 @@ impl File<Cursor<Vec<u8>>> {
 	/// # Examples
 	///
 	/// ```no_run
-	/// use dvine_types::file::efc::File;
+	/// use dvine_types::file::efc::FileBuilder;
 	///
 	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-	/// let efc = File::new();
-	/// efc.save_to_file("output.EFC")?;
+	/// let builder = FileBuilder::new();
+	/// builder.save_to_file("output.EFC")?;
 	/// # Ok(())
 	/// # }
 	/// ```

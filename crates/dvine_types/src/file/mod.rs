@@ -18,7 +18,10 @@ pub use error::{DvFileError, FileType};
 
 // Re-export main file types
 pub use dsk::File as DskFile;
-pub use efc::{AdpcmDataHeader, DecodedSound, EffectInfo, File as EfcFile, SoundDataHeader};
+pub use efc::{
+	AdpcmDataHeader, DecodedSound, EffectInfo, File as EfcFile, FileBuilder as EfcFileBuilder,
+	SoundDataHeader,
+};
 pub use fnt::{
 	File as FntFile, FontSize, GlyphIter, glyph::Glyph, glyph::GlyphBitmap,
 	glyph::GlyphBitmapLineIterator,

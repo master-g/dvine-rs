@@ -10,7 +10,7 @@
 ├── DV_DISC2.TXT # ✅ Disc 2 text file ? Unnecessary for running the game ?
 ├── dvflg1[23].dat # 🚧 save files
 ├── dvine_op.exe # ✅ opening movie player executable
-├── Dvine.EFC # 🚧 Sound effects
+├── Dvine.EFC # ✅ Sound effects
 ├── DXMSTEST.MFD # DirectX media streaming test file ?
 ├── FGL.DSK # ❓ Foreground layer disk data
 ├── FGL.PFT # ✅

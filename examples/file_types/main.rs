@@ -1,6 +1,7 @@
 //! Test file types for `dvine-rs`
 
 mod efc;
+mod efc_builder;
 mod extract;
 mod font;
 mod item;
@@ -24,17 +25,18 @@ fn main() {
 				extract::extract_pft_dsk(filename);
 			}
 			"efc" => efc::test(),
+			"efc_builder" => efc_builder::run().unwrap(),
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),
 			"kg" => kg::test(true),
 			_ => {
 				println!("Unknown example: {}", args[1]);
-				println!("Available examples: font, item");
+				println!("Available examples: efc, efc_builder, font, item, startup, kg, extract");
 			}
 		}
 	} else {
-		println!("Available examples: font, item");
+		println!("Available examples: efc, efc_builder, font, item, startup, kg, extract");
 		println!("Usage: cargo run --example file-types -- <example_name>");
 	}
 }

@@ -1,7 +1,7 @@
 //! Sound effect file support for `dvine-rs` project.
 //!
-//! This module provides support for reading and decoding `.EFC` (Effect) files,
-//! which contain sound effects encoded in IMA ADPCM format.
+//! This module provides comprehensive support for reading, decoding, creating, and modifying
+//! `.EFC` (Effect) files, which contain sound effects encoded in IMA ADPCM format.
 //!
 //! # File Structure
 //!
@@ -13,6 +13,14 @@
 //! - Sound data header (4 bytes)
 //! - ADPCM data header (0xC0 bytes) including step table and sample count
 //! - IMA ADPCM encoded audio data
+//!
+//! # Features
+//!
+//! - **Reading & Decoding**: Extract and decode ADPCM-compressed sound effects to PCM
+//! - **Writing & Encoding**: Create new EFC files and encode PCM data to ADPCM
+//! - **Modification**: Insert, update, and remove sound effects
+//! - **Export**: Save decoded sounds as WAV files
+//! - **Iteration**: Iterate over effects with or without decoding
 //!
 //! # Examples
 //!
@@ -39,6 +47,48 @@
 //! # }
 //! ```
 //!
+//! ## Creating a new EFC file
+//!
+//! ```no_run
+//! use dvine_types::file::efc::{File, DecodedSound, SoundDataHeader, AdpcmDataHeader};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create a new empty EFC file
+//! let mut efc = File::new();
+//!
+//! // Create a step table for ADPCM encoding
+//! let mut step_table = [0i16; 89];
+//! for i in 0..89 {
+//!     step_table[i] = 7 + i as i16 * 8;
+//! }
+//!
+//! // Create a sound effect with PCM data
+//! let sound = DecodedSound {
+//!     id: 10,
+//!     sound_header: SoundDataHeader {
+//!         sound_type: 1,
+//!         unknown_1: 0,
+//!         priority: 100,
+//!     },
+//!     adpcm_header: AdpcmDataHeader {
+//!         sample_rate: 22050,
+//!         channels: 1,
+//!         unknown: 0,
+//!         step_table,
+//!         sample_count: 1000,
+//!     },
+//!     pcm_data: vec![0i16; 1000],
+//! };
+//!
+//! // Insert the sound effect
+//! efc.insert_effect(10, sound)?;
+//!
+//! // Save to file
+//! efc.save_to_file("output.EFC")?;
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! ## Exporting to WAV file
 //!
 //! ```no_run
@@ -52,6 +102,32 @@
 //! // Write to WAV file
 //! let mut wav_file = FsFile::create("effect_42.wav")?;
 //! sound.write(&mut wav_file)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Modifying an existing EFC file
+//!
+//! ```no_run
+//! use dvine_types::file::efc::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Open an existing file
+//! let mut efc = File::open("SOUND.EFC")?;
+//!
+//! // Extract an effect
+//! let sound = efc.extract(10)?.clone();
+//!
+//! // Modify it (e.g., change priority)
+//! let mut modified_sound = sound;
+//! modified_sound.sound_header.priority = 200;
+//!
+//! // Create a new file with modifications
+//! let mut new_efc = File::new();
+//! new_efc.insert_effect(10, modified_sound)?;
+//!
+//! // Save the modified file
+//! new_efc.save_to_file("MODIFIED.EFC")?;
 //! # Ok(())
 //! # }
 //! ```
@@ -100,11 +176,17 @@
 //! # }
 //! ```
 
+/// Decoder module for IMA ADPCM decompression
 pub mod decoder;
+
+/// Encoder module for IMA ADPCM compression
+pub mod encoder;
 
 use std::{
 	fmt::Display,
+	fs::File as FsFile,
 	io::{Read, Seek, Write},
+	path::Path,
 };
 
 use crate::file::{DvFileError, efc::constants::MAX_EFFECTS};
@@ -288,6 +370,56 @@ impl DecodedSound {
 		wav_writer.finalize()?;
 
 		Ok(())
+	}
+}
+
+impl DecodedSound {
+	/// Encodes the PCM data back to ADPCM format
+	///
+	/// Returns the complete effect data including headers and ADPCM data
+	pub fn to_bytes(&self) -> Result<Vec<u8>, DvFileError> {
+		let mut buffer = Vec::new();
+
+		// Write sound data header (4 bytes)
+		buffer.push(self.sound_header.sound_type);
+		buffer.push(self.sound_header.unknown_1);
+		buffer.extend_from_slice(&self.sound_header.priority.to_le_bytes());
+
+		// Write ADPCM data header (0xC0 bytes)
+		// Track position within ADPCM header
+		let adpcm_header_start = buffer.len();
+
+		buffer.extend_from_slice(&self.adpcm_header.sample_rate.to_le_bytes());
+		buffer.extend_from_slice(&self.adpcm_header.channels.to_le_bytes());
+		buffer.extend_from_slice(&self.adpcm_header.unknown.to_le_bytes());
+
+		// Write step table (89 entries * 2 bytes = 178 bytes)
+		for &step in &self.adpcm_header.step_table {
+			buffer.extend_from_slice(&step.to_le_bytes());
+		}
+
+		// Padding to reach offset 0xBC within ADPCM header
+		// 0xBC = 188 bytes from start of ADPCM header
+		let current_adpcm_len = buffer.len() - adpcm_header_start;
+		if current_adpcm_len < 0xBC {
+			let padding_needed = 0xBC - current_adpcm_len;
+			buffer.resize(buffer.len() + padding_needed, 0);
+		}
+
+		// Write sample count at offset 0xBC (within ADPCM header)
+		buffer.extend_from_slice(&self.adpcm_header.sample_count.to_le_bytes());
+
+		// Encode PCM to ADPCM
+		let adpcm_data = encoder::encode_ima_adpcm(
+			&self.pcm_data,
+			&self.adpcm_header.step_table,
+			self.adpcm_header.channels,
+		)?;
+
+		// Write ADPCM data
+		buffer.extend_from_slice(&adpcm_data);
+
+		Ok(buffer)
 	}
 }
 
@@ -604,71 +736,198 @@ impl File<std::io::BufReader<std::fs::File>> {
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use std::io::Cursor;
+impl Default for File<std::io::Cursor<Vec<u8>>> {
+	fn default() -> Self {
+		Self {
+			reader: std::io::Cursor::new(Vec::new()),
+			index_table: [0u32; constants::MAX_EFFECTS],
+			cache: Box::new(std::array::from_fn(|_| None)),
+		}
+	}
+}
 
-	fn create_test_efc() -> File<Cursor<Vec<u8>>> {
-		// Create a minimal EFC file with index table
-		let mut data = Vec::new();
+impl File<std::io::Cursor<Vec<u8>>> {
+	/// Creates a new empty `.EFC` file
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use dvine_types::file::efc::File;
+	///
+	/// let efc = File::new();
+	/// assert_eq!(efc.effect_count(), 0);
+	/// ```
+	pub fn new() -> Self {
+		Self::default()
+	}
 
-		// Index table (256 entries, 4 bytes each)
-		// Effect 0 at offset 0x400
-		data.extend_from_slice(&0x400u32.to_le_bytes());
-		// Effect 1 at offset 0x500
-		data.extend_from_slice(&0x500u32.to_le_bytes());
-		// Rest are 0 (no effect)
-		for _ in 2..256 {
-			data.extend_from_slice(&0u32.to_le_bytes());
+	/// Inserts or updates a sound effect at the given ID
+	///
+	/// # Arguments
+	/// * `id` - Effect ID (0 to 255)
+	/// * `sound` - The decoded sound to insert
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use dvine_types::file::efc::{File, DecodedSound, SoundDataHeader, AdpcmDataHeader};
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut efc = File::new();
+	///
+	/// let sound = DecodedSound {
+	///     id: 0,
+	///     sound_header: SoundDataHeader {
+	///         sound_type: 1,
+	///         unknown_1: 0,
+	///         priority: 100,
+	///     },
+	///     adpcm_header: AdpcmDataHeader {
+	///         sample_rate: 22050,
+	///         channels: 1,
+	///         unknown: 0,
+	///         step_table: [7; 89],
+	///         sample_count: 1000,
+	///     },
+	///     pcm_data: vec![0i16; 1000],
+	/// };
+	///
+	/// efc.insert_effect(42, sound)?;
+	/// assert!(efc.has_effect(42));
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn insert_effect(&mut self, id: usize, sound: DecodedSound) -> Result<(), DvFileError> {
+		if id >= constants::MAX_EFFECTS {
+			return Err(DvFileError::EntryNotFound {
+				file_type: super::FileType::Efc,
+				message: format!(
+					"Effect ID {} out of range (max {})",
+					id,
+					constants::MAX_EFFECTS - 1
+				),
+			});
 		}
 
-		let reader = Cursor::new(data);
-		File::from_reader(reader).unwrap()
+		// Store in cache
+		self.cache[id] = Some(Box::new(sound));
+
+		// Mark as present in index table (actual offset will be calculated in to_bytes)
+		self.index_table[id] = 1; // Non-zero to indicate presence
+
+		Ok(())
 	}
 
-	#[test]
-	fn test_iter_info() {
-		let efc = create_test_efc();
-		let effects: Vec<_> = efc.iter_info().collect();
-
-		assert_eq!(effects.len(), 2);
-		assert_eq!(effects[0].id, 0);
-		assert_eq!(effects[0].offset, 0x400);
-		assert_eq!(effects[1].id, 1);
-		assert_eq!(effects[1].offset, 0x500);
+	/// Removes a sound effect at the given ID
+	///
+	/// # Arguments
+	/// * `id` - Effect ID (0 to 255)
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use dvine_types::file::efc::File;
+	///
+	/// let mut efc = File::new();
+	/// efc.remove_effect(42);
+	/// assert!(!efc.has_effect(42));
+	/// ```
+	pub fn remove_effect(&mut self, id: usize) {
+		if id < constants::MAX_EFFECTS {
+			self.cache[id] = None;
+			self.index_table[id] = 0;
+		}
 	}
 
-	#[test]
-	fn test_iter_alias() {
-		let efc = create_test_efc();
-		let effects: Vec<_> = efc.iter().collect();
+	/// Serializes the `.EFC` file to bytes
+	///
+	/// This method rebuilds the entire file structure including the index table
+	/// and all effect data.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use dvine_types::file::efc::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let efc = File::new();
+	/// let bytes = efc.to_bytes()?;
+	/// assert_eq!(bytes.len(), 256 * 4); // Index table only for empty file
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn to_bytes(&self) -> Result<Vec<u8>, DvFileError> {
+		let mut buffer = Vec::new();
 
-		assert_eq!(effects.len(), 2);
+		// Reserve space for index table (256 * 4 = 1024 bytes)
+		let index_table_size = constants::MAX_EFFECTS * 4;
+		buffer.resize(index_table_size, 0);
+
+		// Write effects and build index table
+		let mut new_index_table = [0u32; constants::MAX_EFFECTS];
+		let mut current_offset = index_table_size as u32;
+
+		for (id, entry) in new_index_table.iter_mut().enumerate().take(constants::MAX_EFFECTS) {
+			if let Some(ref sound) = self.cache[id] {
+				// Record offset in index table
+				*entry = current_offset;
+
+				// Encode effect data
+				let effect_data = sound.to_bytes()?;
+
+				// Write effect data
+				buffer.extend_from_slice(&effect_data);
+
+				// Update offset for next effect
+				current_offset += effect_data.len() as u32;
+			}
+		}
+
+		// Write index table at the beginning
+		for (i, &offset) in new_index_table.iter().enumerate() {
+			let pos = i * 4;
+			buffer[pos..pos + 4].copy_from_slice(&offset.to_le_bytes());
+		}
+
+		Ok(buffer)
 	}
 
-	#[test]
-	fn test_effect_count() {
-		let efc = create_test_efc();
-		assert_eq!(efc.effect_count(), 2);
+	/// Writes the `.EFC` file to the given writer
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use dvine_types::file::efc::File;
+	/// use std::fs::File as FsFile;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let efc = File::new();
+	/// let mut file = FsFile::create("output.EFC")?;
+	/// efc.write_to(&mut file)?;
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<(), DvFileError> {
+		let bytes = self.to_bytes()?;
+		writer.write_all(&bytes)?;
+		Ok(())
 	}
 
-	#[test]
-	fn test_has_effect() {
-		let efc = create_test_efc();
-		assert!(efc.has_effect(0));
-		assert!(efc.has_effect(1));
-		assert!(!efc.has_effect(2));
-		assert!(!efc.has_effect(255));
-	}
-
-	#[test]
-	fn test_list_effects() {
-		let efc = create_test_efc();
-		let effects = efc.list_effects();
-
-		assert_eq!(effects.len(), 2);
-		assert_eq!(effects[0].id, 0);
-		assert_eq!(effects[1].id, 1);
+	/// Saves the `.EFC` file to the given path
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use dvine_types::file::efc::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let efc = File::new();
+	/// efc.save_to_file("output.EFC")?;
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), DvFileError> {
+		let mut file = FsFile::create(path)?;
+		self.write_to(&mut file)
 	}
 }

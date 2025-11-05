@@ -203,20 +203,18 @@ impl FileBuilder {
 		let mut new_index_table = [0u32; MAX_EFFECTS];
 		let mut current_offset = index_table_size as u32;
 
-		for id in 0..MAX_EFFECTS {
-			if let Some(sound) = self.effects.get(&id) {
-				// Record offset in index table
-				new_index_table[id] = current_offset;
+		for (id, sound) in &self.effects {
+			// Record offset in index table
+			new_index_table[*id] = current_offset;
 
-				// Encode effect data
-				let effect_data = sound.to_bytes()?;
+			// Encode effect data
+			let effect_data = sound.to_bytes()?;
 
-				// Write effect data
-				buffer.extend_from_slice(&effect_data);
+			// Write effect data
+			buffer.extend_from_slice(&effect_data);
 
-				// Update offset for next effect
-				current_offset += effect_data.len() as u32;
-			}
+			// Update offset for next effect
+			current_offset += effect_data.len() as u32;
 		}
 
 		// Write index table at the beginning

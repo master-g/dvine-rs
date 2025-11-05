@@ -3,6 +3,7 @@
 mod error;
 
 pub mod dsk;
+pub mod efc;
 pub mod fnt;
 pub mod item;
 pub mod kg;

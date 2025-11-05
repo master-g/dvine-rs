@@ -13,8 +13,8 @@ pub mod startup_ini;
 /// Block size used in DSK files (2048 bytes / 0x0800)
 pub const DSK_BLOCK_SIZE: usize = 0x0800;
 
-// Re-export error types
-pub use error::{DskError, FntError, ItemError, KgError, PftError};
+// Re-export unified error type
+pub use error::{DvFileError, FileType};
 
 // Re-export main file types
 pub use dsk::File as DskFile;

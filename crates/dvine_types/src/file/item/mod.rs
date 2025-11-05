@@ -64,7 +64,7 @@
 //! # }
 //! ```
 
-use crate::file::error::ItemError;
+use crate::file::{DvFileError, FileType};
 
 pub mod entry;
 
@@ -169,7 +169,7 @@ impl File {
 	/// - The file is too small
 	/// - The checksum validation fails
 	/// - The data size is not a multiple of the item size
-	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, ItemError> {
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DvFileError> {
 		let file = std::fs::File::open(path)?;
 		Self::from_reader(file)
 	}
@@ -193,7 +193,7 @@ impl File {
 	/// - The data is too small
 	/// - The checksum validation fails
 	/// - The data size is not a multiple of the item size
-	pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self, ItemError> {
+	pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self, DvFileError> {
 		// Read item count (2 bytes, little-endian)
 		let mut item_count_buf = [0u8; constants::ITEM_COUNT_SIZE];
 		reader.read_exact(&mut item_count_buf)?;
@@ -228,7 +228,8 @@ impl File {
 
 		// Validate checksum
 		if checksum != file_checksum {
-			return Err(ItemError::ChecksumMismatch {
+			return Err(DvFileError::ChecksumMismatch {
+				file_type: FileType::Item,
 				expected: file_checksum,
 				actual: checksum,
 			});
@@ -236,7 +237,8 @@ impl File {
 
 		// Convert decrypted bytes into Item array
 		if decrypted.len() % constants::ITEM_SIZE != 0 {
-			return Err(ItemError::InvalidRecordCount {
+			return Err(DvFileError::InvalidRecordCount {
+				file_type: FileType::Item,
 				total_bytes: decrypted.len(),
 				record_size: constants::ITEM_SIZE,
 			});
@@ -273,7 +275,7 @@ impl File {
 	/// - The data is too small
 	/// - The checksum validation fails
 	/// - The data size is not a multiple of the item size
-	pub fn from_bytes(data: &[u8]) -> Result<Self, ItemError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		use std::io::Cursor;
 		Self::from_reader(Cursor::new(data))
 	}
@@ -388,7 +390,7 @@ impl Default for File {
 }
 
 impl TryFrom<&[u8]> for File {
-	type Error = ItemError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -396,7 +398,7 @@ impl TryFrom<&[u8]> for File {
 }
 
 impl TryFrom<Vec<u8>> for File {
-	type Error = ItemError;
+	type Error = DvFileError;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -499,7 +501,7 @@ mod tests {
 		// Should fail checksum validation
 		let result = File::from_bytes(&bytes);
 		assert!(result.is_err());
-		assert!(matches!(result, Err(ItemError::ChecksumMismatch { .. })));
+		assert!(matches!(result, Err(DvFileError::ChecksumMismatch { .. })));
 	}
 
 	#[test]
@@ -507,7 +509,8 @@ mod tests {
 		let data = vec![0u8; 10]; // Too small
 		let result = File::from_bytes(&data);
 		assert!(result.is_err());
-		assert!(matches!(result, Err(ItemError::InsufficientData { .. })));
+		// read_exact will fail with IOError when data is too small
+		assert!(matches!(result, Err(DvFileError::IOError { .. })));
 	}
 
 	#[test]

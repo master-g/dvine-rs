@@ -52,10 +52,10 @@
 //! let pft = pft::File::open("data.pft").unwrap();
 //!
 //! // File-backed (automatically uses BufReader)
-//! let mut dsk = dsk::File::open("data.dsk", pft.clone()).unwrap();
+//! let mut dsk = dsk::File::open("data", "DATA").unwrap();
 //!
 //! // Memory-backed (loads entire file)
-//! let mut dsk_mem = dsk::File::from_bytes(std::fs::read("data.dsk").unwrap(), pft).unwrap();
+//! let mut dsk_mem = dsk::File::from_bytes(std::fs::read("data/DATA.dsk").unwrap(), pft).unwrap();
 //! ```
 
 use std::{
@@ -64,7 +64,7 @@ use std::{
 	path::Path,
 };
 
-use super::{DSK_BLOCK_SIZE, error::DskError, pft};
+use super::{DSK_BLOCK_SIZE, DvFileError, FileType, pft};
 
 /// DSK File abstraction over any seekable reader
 ///
@@ -199,12 +199,13 @@ impl<R: Read + Seek> File<R> {
 	/// Returns an error if:
 	/// - The block index is out of range
 	/// - An I/O error occurs
-	pub fn read_block(&mut self, index: usize) -> Result<Vec<u8>, DskError> {
+	pub fn read_block(&mut self, index: usize) -> Result<Vec<u8>, DvFileError> {
 		let offset = (index * DSK_BLOCK_SIZE) as u64;
 		let total_size = self.size()?;
 
 		if offset >= total_size {
-			return Err(DskError::BlockOutOfRange {
+			return Err(DvFileError::BlockOutOfRange {
+				file_type: FileType::Dsk,
 				index: index as u32,
 				total: (total_size / DSK_BLOCK_SIZE as u64) as usize,
 			});
@@ -230,14 +231,19 @@ impl<R: Read + Seek> File<R> {
 	/// Returns an error if:
 	/// - Any block index is out of range
 	/// - An I/O error occurs
-	pub fn read_blocks(&mut self, start_index: usize, count: usize) -> Result<Vec<u8>, DskError> {
+	pub fn read_blocks(
+		&mut self,
+		start_index: usize,
+		count: usize,
+	) -> Result<Vec<u8>, DvFileError> {
 		let offset = (start_index * DSK_BLOCK_SIZE) as u64;
 		let bytes_to_read = count * DSK_BLOCK_SIZE;
 		let end_offset = offset + bytes_to_read as u64;
 		let total_size = self.size()?;
 
 		if end_offset > total_size {
-			return Err(DskError::BlockOutOfRange {
+			return Err(DvFileError::BlockOutOfRange {
+				file_type: FileType::Dsk,
 				index: (start_index + count - 1) as u32,
 				total: (total_size / DSK_BLOCK_SIZE as u64) as usize,
 			});
@@ -266,7 +272,7 @@ impl<R: Read + Seek> File<R> {
 	/// - The required blocks are out of range
 	/// - The actual size exceeds available data
 	/// - An I/O error occurs
-	pub fn extract(&mut self, entry: &pft::Entry) -> Result<Vec<u8>, DskError> {
+	pub fn extract(&mut self, entry: &pft::Entry) -> Result<Vec<u8>, DvFileError> {
 		let start_index = entry.index as usize;
 		let blocks_needed = entry.blocks_needed() as usize;
 		let actual_size = entry.actual_size as usize;
@@ -276,7 +282,8 @@ impl<R: Read + Seek> File<R> {
 
 		// Validate actual size
 		if actual_size > block_data.len() {
-			return Err(DskError::InvalidExtraction {
+			return Err(DvFileError::InvalidExtraction {
+				file_type: FileType::Dsk,
 				required: actual_size,
 				available: block_data.len(),
 			});
@@ -298,9 +305,10 @@ impl<R: Read + Seek> File<R> {
 	/// - The index is out of range
 	/// - Extraction fails
 	/// - An I/O error occurs
-	pub fn extract_by_index(&mut self, index: usize) -> Result<Vec<u8>, DskError> {
+	pub fn extract_by_index(&mut self, index: usize) -> Result<Vec<u8>, DvFileError> {
 		// Get entry information before borrowing self mutably
-		let entry = *self.pft.get_entry(index).ok_or_else(|| DskError::InvalidExtraction {
+		let entry = *self.pft.get_entry(index).ok_or_else(|| DvFileError::InvalidExtraction {
+			file_type: FileType::Dsk,
 			required: index,
 			available: self.pft.num_entries(),
 		})?;
@@ -320,13 +328,13 @@ impl<R: Read + Seek> File<R> {
 	/// - The file is not found
 	/// - Extraction fails
 	/// - An I/O error occurs
-	pub fn extract_by_name(&mut self, name: &str) -> Result<Vec<u8>, DskError> {
+	pub fn extract_by_name(&mut self, name: &str) -> Result<Vec<u8>, DvFileError> {
 		// Get entry information before borrowing self mutably
 		let entry = *self.pft.find_entry(name).ok_or_else(|| {
-			DskError::IOError(io::Error::new(
-				io::ErrorKind::NotFound,
-				format!("File '{}' not found", name),
-			))
+			DvFileError::io_error(
+				FileType::Dsk,
+				io::Error::new(io::ErrorKind::NotFound, format!("File '{}' not found", name)),
+			)
 		})?;
 
 		self.extract(&entry)
@@ -358,7 +366,7 @@ impl<R: Read + Seek> File<R> {
 	/// Returns an error if:
 	/// - Any entry references out-of-range blocks
 	/// - An I/O error occurs while determining file size
-	pub fn validate(&mut self) -> Result<(), DskError> {
+	pub fn validate(&mut self) -> Result<(), DvFileError> {
 		let total_blocks = self.num_blocks()?;
 
 		for entry in self.pft.entries() {
@@ -367,7 +375,8 @@ impl<R: Read + Seek> File<R> {
 			let end_index = start_index + blocks_needed;
 
 			if end_index > total_blocks {
-				return Err(DskError::FileTooLarge {
+				return Err(DvFileError::FileTooLarge {
+					file_type: FileType::Dsk,
 					size: entry.actual_size as usize,
 					blocks_needed,
 					blocks_available: total_blocks.saturating_sub(start_index),
@@ -442,7 +451,7 @@ impl File<BufReader<fs::File>> {
 	/// ```
 	///
 	/// This will open "data/ANM.DSK" and "data/ANM.PFT"
-	pub fn open(dir: impl AsRef<Path>, name: &str) -> Result<Self, DskError> {
+	pub fn open(dir: impl AsRef<Path>, name: &str) -> Result<Self, DvFileError> {
 		let pft_name = format!("{}.PFT", name);
 		let pft_path = dir.as_ref().join(pft_name);
 		let pft = pft::File::open(&pft_path)?;
@@ -518,7 +527,7 @@ pub struct DskIterator<'a, R> {
 }
 
 impl<'a, R: Read + Seek> Iterator for DskIterator<'a, R> {
-	type Item = Result<(pft::Entry, Vec<u8>), DskError>;
+	type Item = Result<(pft::Entry, Vec<u8>), DvFileError>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		// Skip invalid entries

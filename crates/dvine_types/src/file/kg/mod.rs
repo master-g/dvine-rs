@@ -5,7 +5,7 @@ mod encode;
 
 use std::{fmt::Display, io::Read};
 
-use crate::file::{KgError, kg::constants::MAGIC};
+use crate::file::{DvFileError, FileType, kg::constants::MAGIC};
 
 mod constants {
 	/// Magic bytes for `.KG` files
@@ -168,27 +168,28 @@ impl Header {
 	}
 
 	/// Parses a `.KG` file header from the given byte slice.
-	pub fn from_bytes(data: &[u8]) -> Result<Header, KgError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Header, DvFileError> {
 		if data.len() < constants::HEADER_SIZE {
-			return Err(KgError::InsufficientData {
-				expected: constants::HEADER_SIZE,
-				actual: data.len(),
-			});
+			return Err(DvFileError::insufficient_data(
+				FileType::Kg,
+				constants::HEADER_SIZE,
+				data.len(),
+			));
 		}
 
 		let magic = [data[0], data[1]];
 		if magic != constants::MAGIC {
-			return Err(KgError::InvalidMagic {
-				expected: constants::MAGIC,
-				actual: magic,
-			});
+			return Err(DvFileError::invalid_magic(FileType::Kg, &constants::MAGIC, &magic));
 		}
 
 		let version = data[2];
 		let compression_type = match data[3] {
 			1 => Compression::BPP3,
 			_ => {
-				return Err(KgError::UnsupportedCompressionType(data[3]));
+				return Err(DvFileError::UnsupportedCompressionType {
+					file_type: FileType::Kg,
+					compression_type: data[3],
+				});
 			}
 		};
 		let width = u16::from_le_bytes([data[4], data[5]]);
@@ -240,7 +241,7 @@ impl Header {
 	/// # Ok(())
 	/// # }
 	/// ```
-	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, KgError> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		let mut buffer = [0u8; constants::HEADER_SIZE];
 		reader.read_exact(&mut buffer)?;
 		Self::from_bytes(&buffer)
@@ -329,7 +330,7 @@ impl File {
 	}
 
 	/// Opens and parses a `.KG` file from the specified path
-	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, KgError> {
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DvFileError> {
 		let data = std::fs::read(path)?;
 		decode::decompress(&data)
 	}
@@ -339,7 +340,7 @@ impl File {
 	/// Note: This reads the entire file into memory before decompression.
 	/// The KG decompression algorithm requires random access to the data,
 	/// so streaming decompression is not supported.
-	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, KgError> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		let mut data = Vec::new();
 		reader.read_to_end(&mut data)?;
 		decode::decompress(&data)

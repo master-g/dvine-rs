@@ -5,7 +5,7 @@ use std::{
 	io::{self, Cursor, Read},
 };
 
-use super::error::StartupIniError;
+use super::{DvFileError, FileType};
 
 /// Size of the startup.ini file in bytes
 const STARTUP_INI_SIZE: usize = 24;
@@ -26,12 +26,15 @@ pub enum OpeningMode {
 
 impl OpeningMode {
 	/// Converts a u8 value to `OpeningMode`
-	pub fn from_u8(value: u8) -> Result<Self, StartupIniError> {
+	pub fn from_u8(value: u8) -> Result<Self, DvFileError> {
 		match value {
 			0 => Ok(Self::Normal),
 			1 => Ok(Self::Loop),
 			2 => Ok(Self::Skip),
-			_ => Err(StartupIniError::InvalidOpeningMode(value)),
+			_ => Err(DvFileError::InvalidOpeningMode {
+				file_type: FileType::StartupIni,
+				value,
+			}),
 		}
 	}
 
@@ -65,11 +68,14 @@ pub enum VgaMode {
 
 impl VgaMode {
 	/// Converts a u8 value to `VgaMode`
-	pub fn from_u8(value: u8) -> Result<Self, StartupIniError> {
+	pub fn from_u8(value: u8) -> Result<Self, DvFileError> {
 		match value {
 			0 => Ok(Self::Default),
 			1 => Ok(Self::VgaCompatible),
-			_ => Err(StartupIniError::InvalidVgaMode(value)),
+			_ => Err(DvFileError::InvalidVgaMode {
+				file_type: FileType::StartupIni,
+				value,
+			}),
 		}
 	}
 
@@ -102,11 +108,14 @@ pub enum RenderMode {
 
 impl RenderMode {
 	/// Converts a u32 value to `RenderMode`
-	pub fn from_u32(value: u32) -> Result<Self, StartupIniError> {
+	pub fn from_u32(value: u32) -> Result<Self, DvFileError> {
 		match value {
 			0 => Ok(Self::VsyncOn),
 			1 => Ok(Self::VsyncOff),
-			_ => Err(StartupIniError::InvalidRenderMode(value)),
+			_ => Err(DvFileError::InvalidRenderMode {
+				file_type: FileType::StartupIni,
+				value,
+			}),
 		}
 	}
 
@@ -162,7 +171,7 @@ pub struct StartupIni {
 
 impl StartupIni {
 	/// Opens a startup.ini file from a path
-	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StartupIniError> {
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DvFileError> {
 		let file = std::fs::File::open(path)?;
 		Self::from_reader(file)
 	}
@@ -175,7 +184,7 @@ impl StartupIni {
 	/// # Returns
 	/// * `Ok(StartupIni)` if parsing succeeds
 	/// * `Err(io::Error)` if reading fails or the data is invalid
-	pub fn from_reader<R: Read>(mut reader: R) -> Result<Self, StartupIniError> {
+	pub fn from_reader<R: Read>(mut reader: R) -> Result<Self, DvFileError> {
 		let mut buffer = [0u8; STARTUP_INI_SIZE];
 		reader.read_exact(&mut buffer)?;
 
@@ -213,7 +222,7 @@ impl StartupIni {
 	/// # Returns
 	/// * `Ok(StartupIni)` if parsing succeeds
 	/// * `Err(StartupIniError)` if the data is invalid or too short
-	pub fn from_bytes(data: &[u8]) -> Result<Self, StartupIniError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		Self::from_reader(Cursor::new(data))
 	}
 
@@ -304,7 +313,7 @@ impl std::fmt::Display for StartupIni {
 }
 
 impl TryFrom<&[u8]> for StartupIni {
-	type Error = StartupIniError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -312,7 +321,7 @@ impl TryFrom<&[u8]> for StartupIni {
 }
 
 impl TryFrom<Vec<u8>> for StartupIni {
-	type Error = StartupIniError;
+	type Error = DvFileError;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -320,7 +329,7 @@ impl TryFrom<Vec<u8>> for StartupIni {
 }
 
 impl TryFrom<&Vec<u8>> for StartupIni {
-	type Error = StartupIniError;
+	type Error = DvFileError;
 
 	fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -328,7 +337,7 @@ impl TryFrom<&Vec<u8>> for StartupIni {
 }
 
 impl TryFrom<[u8; STARTUP_INI_SIZE]> for StartupIni {
-	type Error = StartupIniError;
+	type Error = DvFileError;
 
 	fn try_from(value: [u8; STARTUP_INI_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -336,7 +345,7 @@ impl TryFrom<[u8; STARTUP_INI_SIZE]> for StartupIni {
 }
 
 impl TryFrom<&[u8; STARTUP_INI_SIZE]> for StartupIni {
-	type Error = StartupIniError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8; STARTUP_INI_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)

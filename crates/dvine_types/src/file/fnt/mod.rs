@@ -68,7 +68,7 @@
 
 use std::{fmt::Display, io::Cursor};
 
-use crate::file::{error::FntError, fnt::glyph::Glyph};
+use crate::file::{DvFileError, FileType, fnt::glyph::Glyph};
 
 pub mod glyph;
 
@@ -209,7 +209,7 @@ impl File {
 	/// Returns an error if:
 	/// - The file cannot be opened or read
 	/// - The font size is invalid
-	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, FntError> {
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DvFileError> {
 		let mut file = std::fs::File::open(path)?;
 		Self::from_reader(&mut file)
 	}
@@ -382,31 +382,37 @@ impl File {
 	/// - The glyph already exists and `overwrite` is false
 	/// - The glyph size doesn't match the font file's size
 	/// - The glyph data length is incorrect
-	pub fn insert(&mut self, glyph: &Glyph, overwrite: bool) -> Result<(), FntError> {
+	pub fn insert(&mut self, glyph: &Glyph, overwrite: bool) -> Result<(), DvFileError> {
 		// Convert Shift-JIS code to offset table index
-		let index = Self::code_to_index(glyph.code()).ok_or(FntError::CodeOutOfRange {
+		let index = Self::code_to_index(glyph.code()).ok_or(DvFileError::CodeOutOfRange {
+			file_type: FileType::Fnt,
 			code: glyph.code(),
 			max_code: 0xFFFF,
 		})?;
 
 		// Validate glyph size matches font file size
 		if glyph.font_size() != self.font_size {
-			return Err(FntError::InvalidFontSize(glyph.font_size() as u32));
+			return Err(DvFileError::InvalidFontSize {
+				file_type: FileType::Fnt,
+				value: glyph.font_size() as u32,
+			});
 		}
 
 		// Validate glyph data length
 		let bytes_per_glyph = self.bytes_per_glyph();
 		if glyph.data().len() != bytes_per_glyph {
-			return Err(FntError::InsufficientData {
-				expected: bytes_per_glyph,
-				actual: glyph.data().len(),
-			});
+			return Err(DvFileError::insufficient_data(
+				FileType::Fnt,
+				bytes_per_glyph,
+				glyph.data().len(),
+			));
 		}
 
 		let offset_multiplier = self.offsets[index];
 		if offset_multiplier != 0 && !overwrite {
 			// Glyph already exists and overwrite is false
-			return Err(FntError::GlyphAlreadyExists {
+			return Err(DvFileError::GlyphAlreadyExists {
+				file_type: FileType::Fnt,
 				code: glyph.code(),
 			});
 		}
@@ -466,13 +472,13 @@ impl File {
 	}
 
 	/// Loads a font file from a byte slice.
-	pub fn from_bytes(data: &[u8]) -> Result<Self, FntError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		let mut cursor = Cursor::new(data);
 		Self::from_reader(&mut cursor)
 	}
 
 	/// Loads a font file from any reader.
-	pub fn from_reader<R: std::io::Read>(reader: &mut R) -> Result<Self, FntError> {
+	pub fn from_reader<R: std::io::Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		// Read font size from header
 		let mut buf = [0u8; constants::HEADER_SIZE];
 		reader.read_exact(&mut buf)?;
@@ -480,7 +486,12 @@ impl File {
 			8 => FontSize::FS8x8,
 			16 => FontSize::FS16x16,
 			24 => FontSize::FS24x24,
-			other => return Err(FntError::InvalidFontSize(other)),
+			other => {
+				return Err(DvFileError::InvalidFontSize {
+					file_type: FileType::Fnt,
+					value: other,
+				});
+			}
 		};
 
 		// Read offset table

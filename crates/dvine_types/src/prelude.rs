@@ -17,22 +17,20 @@
 pub use crate::file::{
 	// Constants
 	DSK_BLOCK_SIZE,
-	DskError,
 
 	// DSK types
 	DskFile,
+	DvFileError,
 	Entry,
-	FntError,
+	FileType,
 
 	// FNT types
 	FntFile,
 
 	ItemEntry,
-	ItemError,
 	ItemFile,
 	// Item types
 	ItemRaw,
-	PftError,
 
 	// PFT types
 	PftFile,

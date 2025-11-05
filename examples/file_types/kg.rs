@@ -1,4 +1,4 @@
-use dvine_rs::prelude::file::{KgError, KgFile};
+use dvine_rs::prelude::file::{DvFileError, KgFile};
 use image::{ImageBuffer, Rgb};
 
 // use dvine_rs::prelude::file::KgHeader;
@@ -16,16 +16,19 @@ pub(super) fn test(flip: bool) {
 			let f = match KgFile::open(&path) {
 				Ok(f) => f,
 				Err(e) => match e {
-					KgError::InvalidMagic {
-						expected: _,
-						actual: _,
+					DvFileError::InvalidMagic {
+						..
 					} => {
 						println!("Skipping non-KG file: {}", path.display());
 						continue;
 					}
-					KgError::UnderflowError(e) => {
+					DvFileError::UnderflowError {
+						message,
+						..
+					} => {
 						println!(
-							"Skipping KG file cannot be decompress correctly:{e}\n{}",
+							"Skipping KG file cannot be decompress correctly:{}\n{}",
+							message,
 							path.display()
 						);
 						continue;

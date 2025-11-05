@@ -8,7 +8,7 @@ use std::{
 	io::{self, Read},
 };
 
-use super::{DSK_BLOCK_SIZE, error::PftError};
+use super::{DSK_BLOCK_SIZE, DvFileError, FileType};
 
 mod constants {
 	/// Magic number for PFT files
@@ -40,17 +40,18 @@ impl Header {
 	}
 
 	/// Loads header from a byte slice
-	pub fn from_bytes(data: &[u8]) -> Result<Self, PftError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		if data.len() < constants::HEADER_SIZE {
-			return Err(PftError::InsufficientData {
-				expected: constants::HEADER_SIZE,
-				actual: data.len(),
-			});
+			return Err(DvFileError::insufficient_data(
+				FileType::Pft,
+				constants::HEADER_SIZE,
+				data.len(),
+			));
 		}
 
-		let magic = data[0..4].try_into()?;
+		let magic: [u8; 4] = data[0..4].try_into()?;
 		if magic != constants::MAGIC {
-			return Err(PftError::InvalidMagic(magic));
+			return Err(DvFileError::invalid_magic(FileType::Pft, &constants::MAGIC, &magic));
 		}
 
 		let num_entries = u32::from_le_bytes(data[4..8].try_into()?);
@@ -64,7 +65,7 @@ impl Header {
 	}
 
 	/// Loads header from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		let mut buffer = [0u8; constants::HEADER_SIZE];
 		reader.read_exact(&mut buffer)?;
 		Self::from_bytes(&buffer)
@@ -102,7 +103,7 @@ impl std::fmt::Display for Header {
 }
 
 impl TryFrom<&[u8]> for Header {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -110,7 +111,7 @@ impl TryFrom<&[u8]> for Header {
 }
 
 impl TryFrom<Vec<u8>> for Header {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -118,7 +119,7 @@ impl TryFrom<Vec<u8>> for Header {
 }
 
 impl TryFrom<&Vec<u8>> for Header {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -126,7 +127,7 @@ impl TryFrom<&Vec<u8>> for Header {
 }
 
 impl TryFrom<[u8; constants::HEADER_SIZE]> for Header {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: [u8; constants::HEADER_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -134,7 +135,7 @@ impl TryFrom<[u8; constants::HEADER_SIZE]> for Header {
 }
 
 impl TryFrom<&[u8; constants::HEADER_SIZE]> for Header {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8; constants::HEADER_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -204,13 +205,13 @@ impl Entry {
 	}
 
 	/// Loads entry from a byte slice
-	pub fn from_bytes(data: &[u8]) -> Result<Self, PftError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		let mut cursor = io::Cursor::new(data);
 		Self::from_reader(&mut cursor)
 	}
 
 	/// Loads entry from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		let mut raw_name = [0u8; 8];
 		reader.read_exact(&mut raw_name)?;
 
@@ -282,7 +283,7 @@ impl std::fmt::Display for Entry {
 }
 
 impl TryFrom<&[u8]> for Entry {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -290,7 +291,7 @@ impl TryFrom<&[u8]> for Entry {
 }
 
 impl TryFrom<Vec<u8>> for Entry {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -298,7 +299,7 @@ impl TryFrom<Vec<u8>> for Entry {
 }
 
 impl TryFrom<&Vec<u8>> for Entry {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -306,7 +307,7 @@ impl TryFrom<&Vec<u8>> for Entry {
 }
 
 impl TryFrom<[u8; ENTRY_SIZE]> for Entry {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: [u8; ENTRY_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -314,7 +315,7 @@ impl TryFrom<[u8; ENTRY_SIZE]> for Entry {
 }
 
 impl TryFrom<&[u8; ENTRY_SIZE]> for Entry {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8; ENTRY_SIZE]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -374,7 +375,7 @@ impl File {
 	}
 
 	/// Opens a PFT file from any reader
-	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, PftError> {
+	pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DvFileError> {
 		let mut file = std::fs::File::open(path)?;
 		let pft = Self::from_reader(&mut file)?;
 		pft.validate()?;
@@ -413,7 +414,7 @@ impl File {
 	}
 
 	/// Loads file from a byte slice
-	pub fn from_bytes(data: &[u8]) -> Result<Self, PftError> {
+	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
 		// Parse header
 		let header = Header::from_bytes(data)?;
 
@@ -422,10 +423,7 @@ impl File {
 		let required_size = header_size + expected_entries * Entry::size();
 
 		if data.len() < required_size {
-			return Err(PftError::InsufficientData {
-				expected: required_size,
-				actual: data.len(),
-			});
+			return Err(DvFileError::insufficient_data(FileType::Pft, required_size, data.len()));
 		}
 
 		// Parse entries
@@ -445,7 +443,7 @@ impl File {
 	}
 
 	/// Loads file from any reader
-	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, PftError> {
+	pub fn from_reader<R: Read>(reader: &mut R) -> Result<Self, DvFileError> {
 		// Read header
 		let header = Header::from_reader(reader)?;
 
@@ -479,9 +477,10 @@ impl File {
 	}
 
 	/// Validates that the header's entry count matches the actual entries
-	pub fn validate(&self) -> Result<(), PftError> {
+	pub fn validate(&self) -> Result<(), DvFileError> {
 		if self.header.num_entries as usize != self.entries.len() {
-			return Err(PftError::EntryCountMismatch {
+			return Err(DvFileError::EntryCountMismatch {
+				file_type: FileType::Pft,
 				expected: self.header.num_entries,
 				actual: self.entries.len(),
 			});
@@ -507,7 +506,7 @@ impl std::fmt::Display for File {
 }
 
 impl TryFrom<&[u8]> for File {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)
@@ -515,7 +514,7 @@ impl TryFrom<&[u8]> for File {
 }
 
 impl TryFrom<Vec<u8>> for File {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(&value)
@@ -523,7 +522,7 @@ impl TryFrom<Vec<u8>> for File {
 }
 
 impl TryFrom<&Vec<u8>> for File {
-	type Error = PftError;
+	type Error = DvFileError;
 
 	fn try_from(value: &Vec<u8>) -> Result<Self, Self::Error> {
 		Self::from_bytes(value)

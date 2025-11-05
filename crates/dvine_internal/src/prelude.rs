@@ -6,10 +6,11 @@
 //!
 //! ```rust
 //! use dvine_internal::prelude::*;
+//! use std::io::Cursor;
 //!
 //! // Now you can use all common types directly
-//! let dsk = DskFile::new();
 //! let pft = PftFile::empty();
+//! let dsk = DskFile::new(Cursor::new(vec![]), pft);
 //! let font = FntFile::new(FontSize::FS16x16);
 //!
 //! // Work with glyphs

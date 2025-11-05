@@ -1,4 +1,6 @@
-use super::{Compression, Header, KgError, opcodes};
+use crate::file::{DvFileError, FileType};
+
+use super::{Compression, Header, opcodes};
 
 /// State structure for the decompressor
 #[derive(Debug)]
@@ -138,17 +140,20 @@ impl DecompressorState {
 		}
 	}
 
-	fn read_color_index(&mut self) -> Result<u8, KgError> {
+	fn read_color_index(&mut self) -> Result<u8, DvFileError> {
 		let flag = self.read_bits(1);
 
 		if flag == 1 {
 			Ok(self.read_bits(8) as u8)
 		} else {
 			let Some(ref_pos) = self.write_position.checked_sub(self.bytes_per_pixel) else {
-				return Err(KgError::UnderflowError(format!(
-					"Underflow in read_color_index: write_position={}, bytes_per_pixel={}",
-					self.write_position, self.bytes_per_pixel
-				)));
+				return Err(DvFileError::UnderflowError {
+					file_type: FileType::Kg,
+					message: format!(
+						"Underflow in read_color_index: write_position={}, bytes_per_pixel={}",
+						self.write_position, self.bytes_per_pixel
+					),
+				});
 			};
 			let reference_color = self.output_buffer[ref_pos];
 			let cache_index = self.read_bits(3) as usize;
@@ -184,15 +189,18 @@ impl DecompressorState {
 		}
 	}
 
-	fn opcode_0_dictionary_lookup(&mut self) -> Result<(), KgError> {
+	fn opcode_0_dictionary_lookup(&mut self) -> Result<(), DvFileError> {
 		let color_index = self.read_color_index()?;
 		self.write_pixel(color_index);
 
 		let Some(ref_pos) = self.write_position.checked_sub(self.bytes_per_pixel) else {
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_0_dictionary_lookup: write_position={}, bytes_per_pixel={}",
-				self.write_position, self.bytes_per_pixel
-			)));
+			return Err(DvFileError::UnderflowError {
+				file_type: FileType::Kg,
+				message: format!(
+					"Overflow in opcode_0_dictionary_lookup: write_position={}, bytes_per_pixel={}",
+					self.write_position, self.bytes_per_pixel
+				),
+			});
 		};
 		let reference_color = self.output_buffer[ref_pos];
 
@@ -202,41 +210,50 @@ impl DecompressorState {
 		Ok(())
 	}
 
-	fn opcode_2_copy_previous_pixel(&mut self) -> Result<(), KgError> {
+	fn opcode_2_copy_previous_pixel(&mut self) -> Result<(), DvFileError> {
 		let length = self.read_variable_length() as usize;
 		let Some(src) = self.write_position.checked_sub(self.bytes_per_pixel) else {
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_2_copy_previous_pixel: write_position={}, bytes_per_pixel={}",
-				self.write_position, self.bytes_per_pixel
-			)));
+			return Err(DvFileError::UnderflowError {
+				file_type: FileType::Kg,
+				message: format!(
+					"Overflow in opcode_2_copy_previous_pixel: write_position={}, bytes_per_pixel={}",
+					self.write_position, self.bytes_per_pixel
+				),
+			});
 		};
 		self.copy_data(self.write_position, src, length);
 
 		Ok(())
 	}
 
-	fn opcode_12_copy_up_1_line(&mut self) -> Result<(), KgError> {
+	fn opcode_12_copy_up_1_line(&mut self) -> Result<(), DvFileError> {
 		let length = self.read_variable_length() as usize;
 		let Some(src) = self.write_position.checked_sub(self.line_bytes) else {
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_12_copy_up_1_line: write_position={}, line_bytes={}",
-				self.write_position, self.line_bytes
-			)));
+			return Err(DvFileError::UnderflowError {
+				file_type: FileType::Kg,
+				message: format!(
+					"Overflow in opcode_12_copy_up_1_line: write_position={}, line_bytes={}",
+					self.write_position, self.line_bytes
+				),
+			});
 		};
 		self.copy_data(self.write_position, src, length);
 
 		Ok(())
 	}
 
-	fn opcode_13_copy_up_right(&mut self) -> Result<(), KgError> {
+	fn opcode_13_copy_up_right(&mut self) -> Result<(), DvFileError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > self.line_bytes {
 			self.write_position - self.line_bytes + self.bytes_per_pixel
 		} else {
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_13_copy_left_up: write_position={}, line_bytes={}, bytes_per_pixel={}",
-				self.write_position, self.line_bytes, self.bytes_per_pixel
-			)));
+			return Err(DvFileError::UnderflowError {
+				file_type: FileType::Kg,
+				message: format!(
+					"Overflow in opcode_13_copy_left_up: write_position={}, line_bytes={}, bytes_per_pixel={}",
+					self.write_position, self.line_bytes, self.bytes_per_pixel
+				),
+			});
 			// self.bytes_per_pixel
 		};
 		self.copy_data(self.write_position, src, length);
@@ -244,7 +261,7 @@ impl DecompressorState {
 		Ok(())
 	}
 
-	fn opcode_14_copy_up_left(&mut self) -> Result<(), KgError> {
+	fn opcode_14_copy_up_left(&mut self) -> Result<(), DvFileError> {
 		let length = self.read_variable_length() as usize;
 		let src = if self.write_position > (self.line_bytes + self.bytes_per_pixel) {
 			self.write_position - self.line_bytes - self.bytes_per_pixel
@@ -260,20 +277,23 @@ impl DecompressorState {
 		Ok(())
 	}
 
-	fn opcode_15_copy_up_double(&mut self) -> Result<(), KgError> {
+	fn opcode_15_copy_up_double(&mut self) -> Result<(), DvFileError> {
 		let length = self.read_variable_length() as usize;
 		let Some(src) = self.write_position.checked_sub(self.bytes_per_pixel * 2) else {
-			return Err(KgError::UnderflowError(format!(
-				"Overflow in opcode_15_copy_up_double: write_position={}, bytes_per_pixel={}",
-				self.write_position, self.bytes_per_pixel
-			)));
+			return Err(DvFileError::UnderflowError {
+				file_type: FileType::Kg,
+				message: format!(
+					"Overflow in opcode_15_copy_up_double: write_position={}, bytes_per_pixel={}",
+					self.write_position, self.bytes_per_pixel
+				),
+			});
 		};
 		self.copy_data(self.write_position, src, length);
 
 		Ok(())
 	}
 
-	fn decompress_type1(&mut self) -> Result<(), KgError> {
+	fn decompress_type1(&mut self) -> Result<(), DvFileError> {
 		// Read first 2 bytes
 		for _ in 0..2 {
 			let byte_val = self.read_bits(8) as u8;
@@ -345,7 +365,7 @@ fn apply_palette(indexed_data: &[u8], palette: Option<&[[u8; 4]; 256]>) -> Vec<u
 
 /// Decompress KG format data from a byte slice
 /// Returns (Header, RGB data)
-pub fn decompress(data: &[u8]) -> Result<super::File, KgError> {
+pub fn decompress(data: &[u8]) -> Result<super::File, DvFileError> {
 	let header = Header::from_bytes(data)?;
 
 	let compression_type = header.compression_type();
@@ -374,13 +394,19 @@ pub fn decompress(data: &[u8]) -> Result<super::File, KgError> {
 	if let Some(pal) = palette {
 		state.palette = pal;
 	} else {
-		return Err(KgError::DecompressionError("Missing palette".to_string()));
+		return Err(DvFileError::DecompressionError {
+			file_type: FileType::Kg,
+			message: "Missing palette".to_string(),
+		});
 	}
 
 	if compression_type == Compression::BPP3 {
 		state.decompress_type1()?;
 	} else {
-		return Err(KgError::UnsupportedCompressionType(compression_type as u8));
+		return Err(DvFileError::UnsupportedCompressionType {
+			file_type: FileType::Kg,
+			compression_type: compression_type as u8,
+		});
 	}
 
 	let final_data = if has_palette {

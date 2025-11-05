@@ -7,9 +7,11 @@
 //!
 //! ```rust
 //! use dvine_internal::prelude::*;
+//! use std::io::Cursor;
 //!
 //! // All commonly used types are available
-//! let dsk = DskFile::new();
+//! let pft = PftFile::empty();
+//! let dsk = DskFile::new(Cursor::new(vec![]), pft);
 //! let font = FntFile::new(FontSize::FS16x16);
 //! ```
 

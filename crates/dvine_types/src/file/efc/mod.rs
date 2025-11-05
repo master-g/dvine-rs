@@ -72,6 +72,33 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Using iterators
+//!
+//! ```no_run
+//! use dvine_types::file::efc::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut efc = File::open("SOUND.EFC")?;
+//!
+//! // Iterate over effect info (no decoding)
+//! for info in efc.iter_info() {
+//!     println!("Effect {}: offset 0x{:08X}", info.id, info.offset);
+//! }
+//!
+//! // Iterate over decoded sounds (decodes on-demand)
+//! for result in efc.iter_sounds() {
+//!     match result {
+//!         Ok(sound) => {
+//!             println!("Effect {}: {} ms, {} Hz",
+//!                 sound.id, sound.duration_ms(), sound.adpcm_header.sample_rate);
+//!         }
+//!         Err(e) => eprintln!("Error decoding: {}", e),
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod decoder;
 
@@ -429,6 +456,143 @@ impl<R: Read + Seek> File<R> {
 			*entry = None;
 		}
 	}
+
+	/// Returns an iterator over effect information
+	///
+	/// This iterator returns basic information about each effect without decoding.
+	/// It's useful for quickly listing available effects.
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use dvine_types::file::efc::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let efc = File::open("SOUND.EFC")?;
+	///
+	/// for info in efc.iter_info() {
+	///     println!("Effect {}: offset 0x{:08X}", info.id, info.offset);
+	/// }
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn iter_info(&self) -> EffectInfoIter<'_> {
+		EffectInfoIter {
+			index_table: &self.index_table,
+			current_id: 0,
+		}
+	}
+
+	/// Returns an iterator over decoded sounds
+	///
+	/// This iterator decodes effects on-demand as they are accessed.
+	/// Returns cloned `DecodedSound` instances. For cached access without cloning,
+	/// use `extract()` directly.
+	///
+	/// # Examples
+	///
+	/// ```no_run
+	/// use dvine_types::file::efc::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut efc = File::open("SOUND.EFC")?;
+	///
+	/// for result in efc.iter_sounds() {
+	///     match result {
+	///         Ok(sound) => {
+	///             println!("Effect {}: {} ms", sound.id, sound.duration_ms());
+	///         }
+	///         Err(e) => {
+	///             eprintln!("Failed to decode effect: {}", e);
+	///         }
+	///     }
+	/// }
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn iter_sounds(&mut self) -> DecodedSoundIter<'_, R> {
+		DecodedSoundIter {
+			file: self,
+			current_id: 0,
+		}
+	}
+
+	/// Returns an iterator over all effects in the file
+	///
+	/// This is an alias for `iter_info()` that allows using the file as an iterable.
+	pub fn iter(&self) -> EffectInfoIter<'_> {
+		self.iter_info()
+	}
+}
+
+/// Iterator over effect information
+///
+/// This iterator provides basic information about each effect without decoding.
+pub struct EffectInfoIter<'a> {
+	index_table: &'a [u32; constants::MAX_EFFECTS],
+	current_id: usize,
+}
+
+impl<'a> Iterator for EffectInfoIter<'a> {
+	type Item = EffectInfo;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		// Find next valid effect
+		while self.current_id < constants::MAX_EFFECTS {
+			let id = self.current_id;
+			let offset = self.index_table[id];
+			self.current_id += 1;
+
+			if offset != 0 {
+				return Some(EffectInfo {
+					id,
+					offset,
+					// Placeholder header - we can't read it without mutating the file
+					header: SoundDataHeader {
+						sound_type: 0,
+						unknown_1: 0,
+						priority: 0,
+					},
+				});
+			}
+		}
+
+		None
+	}
+}
+
+/// Iterator over decoded sounds
+///
+/// This iterator decodes effects on-demand. If an effect fails to decode,
+/// the iterator returns an error for that effect and continues to the next one.
+///
+/// Returns owned `DecodedSound` instances (cloned from cache).
+pub struct DecodedSoundIter<'a, R> {
+	file: &'a mut File<R>,
+	current_id: usize,
+}
+
+impl<'a, R: Read + Seek> Iterator for DecodedSoundIter<'a, R> {
+	type Item = Result<DecodedSound, DvFileError>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		// Find next valid effect
+		while self.current_id < constants::MAX_EFFECTS {
+			let id = self.current_id;
+			self.current_id += 1;
+
+			if self.file.index_table[id] != 0 {
+				// Try to extract the effect
+				let result = self.file.extract(id);
+				return Some(match result {
+					Ok(sound) => Ok(sound.clone()),
+					Err(e) => Err(e),
+				});
+			}
+		}
+
+		None
+	}
 }
 
 impl File<std::io::BufReader<std::fs::File>> {
@@ -437,5 +601,74 @@ impl File<std::io::BufReader<std::fs::File>> {
 		let file = std::fs::File::open(path)?;
 		let reader = std::io::BufReader::new(file);
 		Self::from_reader(reader)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::io::Cursor;
+
+	fn create_test_efc() -> File<Cursor<Vec<u8>>> {
+		// Create a minimal EFC file with index table
+		let mut data = Vec::new();
+
+		// Index table (256 entries, 4 bytes each)
+		// Effect 0 at offset 0x400
+		data.extend_from_slice(&0x400u32.to_le_bytes());
+		// Effect 1 at offset 0x500
+		data.extend_from_slice(&0x500u32.to_le_bytes());
+		// Rest are 0 (no effect)
+		for _ in 2..256 {
+			data.extend_from_slice(&0u32.to_le_bytes());
+		}
+
+		let reader = Cursor::new(data);
+		File::from_reader(reader).unwrap()
+	}
+
+	#[test]
+	fn test_iter_info() {
+		let efc = create_test_efc();
+		let effects: Vec<_> = efc.iter_info().collect();
+
+		assert_eq!(effects.len(), 2);
+		assert_eq!(effects[0].id, 0);
+		assert_eq!(effects[0].offset, 0x400);
+		assert_eq!(effects[1].id, 1);
+		assert_eq!(effects[1].offset, 0x500);
+	}
+
+	#[test]
+	fn test_iter_alias() {
+		let efc = create_test_efc();
+		let effects: Vec<_> = efc.iter().collect();
+
+		assert_eq!(effects.len(), 2);
+	}
+
+	#[test]
+	fn test_effect_count() {
+		let efc = create_test_efc();
+		assert_eq!(efc.effect_count(), 2);
+	}
+
+	#[test]
+	fn test_has_effect() {
+		let efc = create_test_efc();
+		assert!(efc.has_effect(0));
+		assert!(efc.has_effect(1));
+		assert!(!efc.has_effect(2));
+		assert!(!efc.has_effect(255));
+	}
+
+	#[test]
+	fn test_list_effects() {
+		let efc = create_test_efc();
+		let effects = efc.list_effects();
+
+		assert_eq!(effects.len(), 2);
+		assert_eq!(effects[0].id, 0);
+		assert_eq!(effects[1].id, 1);
 	}
 }

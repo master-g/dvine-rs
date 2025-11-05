@@ -32,21 +32,20 @@ pub(super) fn test() {
 	println!("Total effects: {}", total_effects);
 	println!();
 
-	// List all available effects
+	// List all available effects using iterator
 	println!("=== Available Effects ===");
-	let effects = efc.list_effects();
-	for info in &effects {
+	for info in efc.iter() {
 		println!("Effect ID {:3}: offset 0x{:08X}", info.id, info.offset);
 	}
 	println!();
 
-	// Extract and save each effect
+	// Extract and save each effect using iterator
 	println!("=== Extracting Effects ===");
 	let mut success_count = 0;
 	let mut error_count = 0;
 
-	for info in effects {
-		match efc.extract(info.id) {
+	for result in efc.iter_sounds() {
+		match result {
 			Ok(sound) => {
 				// Print effect information
 				println!("\nEffect ID {}:", sound.id);
@@ -80,7 +79,7 @@ pub(super) fn test() {
 				}
 			}
 			Err(e) => {
-				eprintln!("\n✗ Failed to extract effect {}: {}", info.id, e);
+				eprintln!("\n✗ Failed to decode effect: {}", e);
 				error_count += 1;
 			}
 		}

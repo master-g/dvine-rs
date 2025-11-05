@@ -1,15 +1,17 @@
+use std::path::Path;
+
 use dvine_rs::prelude::file::{DvFileError, KgFile};
 use image::{ImageBuffer, Rgb};
 
 // use dvine_rs::prelude::file::KgHeader;
 
-pub(super) fn test(flip: bool) {
+pub(super) fn test(path_to_kg_files: impl AsRef<Path>, flip: bool) {
 	let cargo_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
 	let bin_root = std::path::Path::new(&cargo_root).join("bin");
-	let kc_extract_path = bin_root.join("kg_extract");
+	let kg_path = bin_root.join(path_to_kg_files.as_ref());
 
 	// for every file in kc_extract directory
-	for entry in std::fs::read_dir(&kc_extract_path).unwrap() {
+	for entry in std::fs::read_dir(&kg_path).unwrap() {
 		let entry = entry.unwrap();
 		let path = entry.path();
 		if path.is_file() {
@@ -43,7 +45,7 @@ pub(super) fn test(flip: bool) {
 
 			// Generate output BMP filename
 			let output_filename = path.file_stem().unwrap().to_str().unwrap().to_owned() + ".bmp";
-			let output_path = kc_extract_path.join(output_filename);
+			let output_path = kg_path.join(output_filename);
 			save_to_bmp(&f, &output_path, flip);
 		}
 	}

@@ -21,17 +21,17 @@
 ├── MPP.PFT # ✅
 ├── op.avi # ✅ opening movie file
 ├── RUBI.FNT # ✅ font for furigana text
-├── scene.DSK # Scene disk data
+├── scene.DSK # ✅ Scene disk data
 ├── scene.PFT # ✅ Scene PFT file
-├── SCN097.SCF # ❓ Single scene file, these scenes are actually missing in packed scene.DSK
-├── SCN470.SCF # ❓ may be we can pack them back in scene.DSK later
-├── SCN522.SCF # ❓
+├── SCN097.SCF # ❓ Scene data file
+├── SCN470.SCF # ❓ Scene data file
+├── SCN522.SCF # ❓ Scene data file
 ├── SCNDAT.TBL # ❓ Scene data table file ?
 ├── SPR.DSK # ❓ Sprite disk data
 ├── SPR.PAL # ❓ Sprite palette file
 ├── SPR.PFT # ✅ Sprite PFT file
 ├── startup.ini # ✅ main configuration file for the game
 ├── SYSTEM.FNT # ✅ system font file, Shift-JIS encoding
-├── THUMB.DSK # ❓ Thumbnail disk data ?
-├── THUMB.PFT # ✅ Thumbnail PFT file ?
+├── THUMB.DSK # 🚧 CG thumbnail images, in KG format
+├── THUMB.PFT # ✅ CG thumbnail disk table file
 └── track # ✅ background music files

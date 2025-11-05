@@ -29,7 +29,14 @@ fn main() {
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),
-			"kg" => kg::test(true),
+			"kg" => {
+				let kg_path = if args.len() > 2 {
+					&args[2]
+				} else {
+					"kg_extract"
+				};
+				kg::test(kg_path, true);
+			}
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!("Available examples: efc, efc_builder, font, item, startup, kg, extract");

@@ -1,6 +1,6 @@
 .
-├── _inmm.dll ❓
-├── _inmm.ini ❓
+├── _inmm.dll # ✅ CD audio virtualization middleware
+├── _inmm.ini # ✅ _inmm.dll configuration file
 ├── ANM.DSK # ❓ Animation disk data
 ├── ANM.PFT # ✅
 ├── AVI # ✅ opening movie in low resolution
@@ -11,10 +11,10 @@
 ├── dvflg1[23].dat # 🚧 save files
 ├── dvine_op.exe # ✅ opening movie player executable
 ├── Dvine.EFC # ✅ Sound effects
-├── DXMSTEST.MFD # DirectX media streaming test file ?
+├── DXMSTEST.MFD # ✅ cursor frame sprite data (DirectX Multi/Mouse Test?, multi-frame-data?)
 ├── FGL.DSK # ❓ Foreground layer disk data
 ├── FGL.PFT # ✅
-├── item.dat # 🚧 item data file
+├── item.dat # 🚧 item data file, involves game logic
 ├── KG.DSK # 🚧 image, cg, avatar disk data
 ├── KG.PFT # ✅
 ├── MPP.DSK # ❓

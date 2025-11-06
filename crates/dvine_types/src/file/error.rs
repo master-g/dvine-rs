@@ -372,6 +372,8 @@ pub enum FileType {
 	Item,
 	/// KG image file
 	Kg,
+	/// MFD mouse cursor animation file
+	Mfd,
 }
 
 impl FileType {
@@ -385,6 +387,7 @@ impl FileType {
 			FileType::Fnt => "FNT",
 			FileType::Item => "dat",
 			FileType::Kg => "",
+			FileType::Mfd => "MFD",
 		}
 	}
 
@@ -398,6 +401,7 @@ impl FileType {
 			FileType::Item => "Item database",
 			FileType::Kg => "Compressed image file",
 			FileType::Efc => "Sound effect file",
+			FileType::Mfd => "Mouse cursor animation file",
 		}
 	}
 }
@@ -412,6 +416,7 @@ impl std::fmt::Display for FileType {
 			FileType::Fnt => write!(f, "FNT"),
 			FileType::Item => write!(f, "ITEM"),
 			FileType::Kg => write!(f, "KG"),
+			FileType::Mfd => write!(f, "MFD"),
 		}
 	}
 }

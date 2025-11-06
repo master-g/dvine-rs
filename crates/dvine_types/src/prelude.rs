@@ -36,6 +36,11 @@ pub use crate::file::{
 	// Item types
 	ItemRaw,
 
+	// MFD types
+	MfdFile,
+	MfdFrame,
+	MfdFrameEntry,
+
 	// PFT types
 	PftFile,
 	PftHeader,
@@ -53,6 +58,12 @@ pub use crate::file::fnt::{FontSize, GlyphIter};
 
 #[doc(inline)]
 pub use crate::file::fnt::glyph::{Glyph, GlyphBitmap, GlyphBitmapLineIterator};
+
+// MFD types
+#[doc(inline)]
+pub use crate::file::mfd::{
+	FrameIterator as MfdFrameIterator, FrameRowIterator as MfdFrameRowIterator,
+};
 
 // Re-export the file module for advanced usage
 #[doc(inline)]

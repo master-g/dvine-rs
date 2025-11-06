@@ -6,6 +6,7 @@ mod extract;
 mod font;
 mod item;
 mod kg;
+mod mfd;
 mod startup_cfg;
 
 fn main() {
@@ -28,6 +29,7 @@ fn main() {
 			"efc_builder" => efc_builder::run().unwrap(),
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
+			"mfd" => mfd::test_mfd(),
 			"startup" => startup_cfg::test(),
 			"kg" => {
 				let kg_path = if args.len() > 2 {
@@ -39,11 +41,13 @@ fn main() {
 			}
 			_ => {
 				println!("Unknown example: {}", args[1]);
-				println!("Available examples: efc, efc_builder, font, item, startup, kg, extract");
+				println!(
+					"Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract"
+				);
 			}
 		}
 	} else {
-		println!("Available examples: efc, efc_builder, font, item, startup, kg, extract");
+		println!("Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract");
 		println!("Usage: cargo run --example file-types -- <example_name>");
 	}
 }

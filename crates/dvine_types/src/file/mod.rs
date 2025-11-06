@@ -7,6 +7,7 @@ pub mod efc;
 pub mod fnt;
 pub mod item;
 pub mod kg;
+pub mod mfd;
 pub mod pft;
 pub mod startup_ini;
 
@@ -28,6 +29,10 @@ pub use fnt::{
 };
 pub use item::{File as ItemFile, ItemRaw, entry::ItemEntry};
 pub use kg::{Compression as KgCompressionType, File as KgFile, Header as KgHeader};
+pub use mfd::{
+	File as MfdFile, Frame as MfdFrame, FrameEntry as MfdFrameEntry,
+	FrameIterator as MfdFrameIterator, FrameRowIterator as MfdFrameRowIterator,
+};
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,

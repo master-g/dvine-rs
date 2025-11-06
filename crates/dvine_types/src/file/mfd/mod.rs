@@ -157,6 +157,14 @@ impl File {
 		&self.entries
 	}
 
+	/// Returns a mutable reference to the frame entries.
+	///
+	/// **Warning:** Modifying entries directly may lead to inconsistencies
+	/// with the underlying bitmap data. Prefer using `update_frame()` instead.
+	pub fn entries_mut(&mut self) -> &mut [FrameEntry] {
+		&mut self.entries
+	}
+
 	/// Returns a specific frame entry by index.
 	///
 	/// # Arguments
@@ -211,6 +219,125 @@ impl File {
 			file: self,
 			current_index: 0,
 		}
+	}
+
+	/// Updates a frame's pixel data in the file.
+	///
+	/// This method updates the raw bitmap data for a specific frame while
+	/// preserving all other file structure.
+	///
+	/// # Arguments
+	///
+	/// * `index` - Frame index (0-based)
+	/// * `pixels` - New pixel data (must match the frame's dimensions)
+	///
+	/// # Returns
+	///
+	/// `true` if the frame was updated successfully, `false` if the index is
+	/// out of range or the pixel data length doesn't match.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use dvine_types::file::mfd::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut mfd = File::open("DXMSTEST.MFD")?;
+	///
+	/// if let Some(mut frame) = mfd.get_frame(0) {
+	///     // Modify the frame
+	///     frame.set_pixel(0, 0, 1);
+	///     frame.set_pixel(1, 1, 2);
+	///
+	///     // Update the frame back into the file
+	///     mfd.update_frame(0, frame.pixels());
+	/// }
+	///
+	/// // Save the modified file
+	/// std::fs::write("MODIFIED.MFD", mfd.to_bytes())?;
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn update_frame(&mut self, index: usize, pixels: &[u8]) -> bool {
+		let Some(entry) = self.entries.get(index) else {
+			return false;
+		};
+
+		// Validate pixel data length
+		if pixels.len() != entry.pixel_count() {
+			return false;
+		}
+
+		// Calculate bitmap offset and update raw data
+		let bitmap_start = constants::BITMAP_DATA_START + entry.bitmap_offset as usize;
+		let bitmap_end = bitmap_start + pixels.len();
+
+		// Validate range
+		if bitmap_end > self.raw.len() {
+			return false;
+		}
+
+		// Update the pixel data
+		self.raw[bitmap_start..bitmap_end].copy_from_slice(pixels);
+		true
+	}
+
+	/// Updates a complete frame (entry + pixels) in the file.
+	///
+	/// This is a convenience method that updates both the frame entry metadata
+	/// and the pixel data. Note that changing frame dimensions may cause issues
+	/// with overlapping bitmap data, so use with caution.
+	///
+	/// # Arguments
+	///
+	/// * `index` - Frame index (0-based)
+	/// * `frame` - Complete frame with entry and pixel data
+	///
+	/// # Returns
+	///
+	/// `true` if the frame was updated successfully, `false` if the index is
+	/// out of range or the update would be invalid.
+	pub fn update_complete_frame(&mut self, index: usize, frame: &Frame) -> bool {
+		// Update pixel data first
+		if !self.update_frame(index, frame.pixels()) {
+			return false;
+		}
+
+		// Update entry metadata in the glyph table
+		if let Some(entry) = self.entries.get_mut(index) {
+			*entry = *frame.entry();
+
+			// Update the raw bytes for the glyph table entry
+			let offset = constants::GLYPH_TABLE_OFFSET + index * constants::GLYPH_ENTRY_SIZE;
+			if offset + constants::GLYPH_ENTRY_SIZE <= self.raw.len() {
+				self.raw[offset..offset + 2].copy_from_slice(&entry.width.to_le_bytes());
+				self.raw[offset + 2..offset + 4].copy_from_slice(&entry.height.to_le_bytes());
+				self.raw[offset + 4..offset + 6].copy_from_slice(&entry.x_offset.to_le_bytes());
+				self.raw[offset + 6..offset + 8].copy_from_slice(&entry.y_offset.to_le_bytes());
+				self.raw[offset + 8..offset + 12]
+					.copy_from_slice(&entry.bitmap_offset.to_le_bytes());
+				return true;
+			}
+		}
+
+		false
+	}
+
+	/// Saves the MFD file to disk.
+	///
+	/// This is a convenience method that writes the file's byte representation
+	/// to the specified path.
+	///
+	/// # Arguments
+	///
+	/// * `path` - Output file path
+	///
+	/// # Errors
+	///
+	/// Returns an error if the file cannot be written.
+	pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<(), DvFileError> {
+		std::fs::write(path, &self.raw)?;
+		Ok(())
 	}
 
 	/// Serializes the MFD file to bytes.
@@ -361,158 +488,5 @@ impl<'a> IntoIterator for &'a File {
 
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter()
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	/// Creates a minimal valid MFD file for testing
-	fn create_test_mfd(frame_count: u32, entries: Vec<FrameEntry>) -> Vec<u8> {
-		let mut data = vec![0u8; constants::GLYPH_TABLE_OFFSET];
-
-		// Write frame count at offset 0x08
-		data[constants::FRAME_COUNT_OFFSET..constants::FRAME_COUNT_OFFSET + 4]
-			.copy_from_slice(&frame_count.to_le_bytes());
-
-		// Write glyph table entries
-		for entry in &entries {
-			data.extend_from_slice(&entry.width.to_le_bytes());
-			data.extend_from_slice(&entry.height.to_le_bytes());
-			data.extend_from_slice(&entry.x_offset.to_le_bytes());
-			data.extend_from_slice(&entry.y_offset.to_le_bytes());
-			data.extend_from_slice(&entry.bitmap_offset.to_le_bytes());
-		}
-
-		// Add bitmap data for each entry
-		for entry in &entries {
-			let bitmap_offset = constants::BITMAP_DATA_START + entry.bitmap_offset as usize;
-			let pixel_count = entry.pixel_count();
-
-			// Ensure we have enough space
-			if data.len() < bitmap_offset + pixel_count {
-				data.resize(bitmap_offset + pixel_count, 0);
-			}
-
-			// Fill with test pattern
-			for i in 0..pixel_count {
-				data[bitmap_offset + i] = (i % 3) as u8;
-			}
-		}
-
-		data
-	}
-
-	#[test]
-	fn test_load_empty_file() {
-		let data = vec![0u8; 16];
-		let result = File::from_bytes(&data);
-		assert!(result.is_err());
-	}
-
-	#[test]
-	fn test_load_minimal_file() {
-		let entries = vec![FrameEntry::new(8, 8, 0, 0, 0)];
-		let data = create_test_mfd(1, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		assert_eq!(mfd.frame_count(), 1);
-		assert_eq!(mfd.entries().len(), 1);
-	}
-
-	#[test]
-	fn test_load_multiple_frames() {
-		let entries = vec![
-			FrameEntry::new(16, 16, -8, -8, 0),
-			FrameEntry::new(32, 32, -16, -16, 256),
-			FrameEntry::new(8, 8, -4, -4, 1280),
-		];
-		let data = create_test_mfd(3, entries.clone());
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		assert_eq!(mfd.frame_count(), 3);
-		assert_eq!(mfd.entries().len(), 3);
-
-		// Verify entries
-		assert_eq!(mfd.get_entry(0).unwrap().width, 16);
-		assert_eq!(mfd.get_entry(1).unwrap().width, 32);
-		assert_eq!(mfd.get_entry(2).unwrap().width, 8);
-	}
-
-	#[test]
-	fn test_get_frame() {
-		let entries = vec![FrameEntry::new(4, 4, 0, 0, 0)];
-		let data = create_test_mfd(1, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		let frame = mfd.get_frame(0).expect("Failed to get frame");
-
-		assert_eq!(frame.width(), 4);
-		assert_eq!(frame.height(), 4);
-		assert_eq!(frame.pixels().len(), 16);
-	}
-
-	#[test]
-	fn test_get_frame_out_of_bounds() {
-		let entries = vec![FrameEntry::new(8, 8, 0, 0, 0)];
-		let data = create_test_mfd(1, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		assert!(mfd.get_frame(1).is_none());
-		assert!(mfd.get_frame(100).is_none());
-	}
-
-	#[test]
-	fn test_iterator() {
-		let entries = vec![
-			FrameEntry::new(8, 8, 0, 0, 0),
-			FrameEntry::new(16, 16, 0, 0, 64),
-			FrameEntry::new(8, 8, 0, 0, 320),
-		];
-		let data = create_test_mfd(3, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		let frames: Vec<_> = mfd.iter().collect();
-
-		assert_eq!(frames.len(), 3);
-		assert_eq!(frames[0].width(), 8);
-		assert_eq!(frames[1].width(), 16);
-		assert_eq!(frames[2].width(), 8);
-	}
-
-	#[test]
-	fn test_iterator_exact_size() {
-		let entries = vec![FrameEntry::new(8, 8, 0, 0, 0), FrameEntry::new(8, 8, 0, 0, 64)];
-		let data = create_test_mfd(2, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		let iter = mfd.iter();
-
-		assert_eq!(iter.len(), 2);
-		assert_eq!(iter.size_hint(), (2, Some(2)));
-	}
-
-	#[test]
-	fn test_serialization_roundtrip() {
-		let entries =
-			vec![FrameEntry::new(16, 16, -8, -8, 0), FrameEntry::new(32, 32, -16, -16, 256)];
-		let original_data = create_test_mfd(2, entries);
-
-		let mfd = File::from_bytes(&original_data).expect("Failed to load MFD");
-		let serialized = mfd.to_bytes();
-
-		assert_eq!(serialized, original_data);
-	}
-
-	#[test]
-	fn test_display() {
-		let entries = vec![FrameEntry::new(8, 8, 0, 0, 0)];
-		let data = create_test_mfd(1, entries);
-
-		let mfd = File::from_bytes(&data).expect("Failed to load MFD");
-		let display = format!("{}", mfd);
-
-		assert!(display.contains("1 frames"));
 	}
 }

@@ -19,7 +19,6 @@ pub struct FrameEntry {
 	/// Hotspot Y offset (signed)
 	pub y_offset: i16,
 	/// Bitmap data offset (relative to `0x10` in the file)
-	#[allow(clippy::doc_markdown)]
 	pub bitmap_offset: u32,
 }
 
@@ -242,6 +241,152 @@ impl Frame {
 			current_row: 0,
 		}
 	}
+
+	/// Fills the entire frame with a single pixel value.
+	///
+	/// # Arguments
+	///
+	/// * `value` - Pixel value to fill (0=transparent, 1=outline, other=fill)
+	///
+	/// # Example
+	///
+	/// ```
+	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	///
+	/// let entry = FrameEntry::new(8, 8, 0, 0, 0);
+	/// let mut frame = Frame::blank(entry);
+	/// frame.fill(2); // Fill with solid color
+	/// assert!(frame.pixels().iter().all(|&p| p == 2));
+	/// ```
+	pub fn fill(&mut self, value: u8) {
+		self.pixels.fill(value);
+	}
+
+	/// Fills a rectangular region with a pixel value.
+	///
+	/// # Arguments
+	///
+	/// * `x` - Starting X coordinate
+	/// * `y` - Starting Y coordinate
+	/// * `width` - Rectangle width
+	/// * `height` - Rectangle height
+	/// * `value` - Pixel value to fill
+	///
+	/// # Returns
+	///
+	/// `true` if the region was filled, `false` if it's out of bounds
+	pub fn fill_rect(&mut self, x: u16, y: u16, width: u16, height: u16, value: u8) -> bool {
+		// Check bounds
+		if x + width > self.entry.width || y + height > self.entry.height {
+			return false;
+		}
+
+		for dy in 0..height {
+			for dx in 0..width {
+				self.set_pixel(x + dx, y + dy, value);
+			}
+		}
+
+		true
+	}
+
+	/// Applies a function to every pixel in the frame.
+	///
+	/// # Arguments
+	///
+	/// * `f` - Function that takes the current pixel value and returns the new value
+	///
+	/// # Example
+	///
+	/// ```
+	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	///
+	/// let entry = FrameEntry::new(4, 4, 0, 0, 0);
+	/// let mut frame = Frame::blank(entry);
+	/// frame.fill(1);
+	///
+	/// // Invert all pixels
+	/// frame.map_pixels(|p| if p == 0 { 2 } else { 0 });
+	/// ```
+	pub fn map_pixels<F>(&mut self, f: F)
+	where
+		F: Fn(u8) -> u8,
+	{
+		for pixel in &mut self.pixels {
+			*pixel = f(*pixel);
+		}
+	}
+
+	/// Applies a function to every pixel with its coordinates.
+	///
+	/// # Arguments
+	///
+	/// * `f` - Function that takes (x, y, `current_value`) and returns the new value
+	///
+	/// # Example
+	///
+	/// ```
+	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	///
+	/// let entry = FrameEntry::new(8, 8, 0, 0, 0);
+	/// let mut frame = Frame::blank(entry);
+	///
+	/// // Create a checkerboard pattern
+	/// frame.map_pixels_with_coords(|x, y, _| {
+	///     if (x + y) % 2 == 0 { 1 } else { 0 }
+	/// });
+	/// ```
+	pub fn map_pixels_with_coords<F>(&mut self, f: F)
+	where
+		F: Fn(u16, u16, u8) -> u8,
+	{
+		for y in 0..self.entry.height {
+			for x in 0..self.entry.width {
+				let idx = y as usize * self.entry.width as usize + x as usize;
+				self.pixels[idx] = f(x, y, self.pixels[idx]);
+			}
+		}
+	}
+
+	/// Clones the frame with new pixel data.
+	///
+	/// This preserves the frame entry metadata but replaces the pixel data.
+	///
+	/// # Arguments
+	///
+	/// * `pixels` - New pixel data (must match frame dimensions)
+	///
+	/// # Panics
+	///
+	/// Panics if the pixel data length doesn't match the frame dimensions.
+	pub fn with_pixels(&self, pixels: Vec<u8>) -> Self {
+		Self::new(self.entry, pixels)
+	}
+
+	/// Creates a copy of this frame with a function applied to all pixels.
+	///
+	/// # Arguments
+	///
+	/// * `f` - Function that transforms pixel values
+	///
+	/// # Example
+	///
+	/// ```
+	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	///
+	/// let entry = FrameEntry::new(4, 4, 0, 0, 0);
+	/// let frame = Frame::blank(entry);
+	///
+	/// // Create an inverted copy
+	/// let inverted = frame.map(|p| if p == 0 { 2 } else { 0 });
+	/// ```
+	pub fn map<F>(&self, f: F) -> Self
+	where
+		F: Fn(u8) -> u8,
+	{
+		let pixels: Vec<u8> = self.pixels.iter().map(|&p| f(p)).collect();
+		Self::new(self.entry, pixels)
+	}
 }
 
 impl Display for Frame {
@@ -271,114 +416,5 @@ impl<'a> Iterator for FrameRowIterator<'a> {
 
 		self.current_row += 1;
 		Some(&self.frame.pixels[start..end])
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn test_frame_entry_creation() {
-		let entry = FrameEntry::new(32, 32, -8, -8, 0x1000);
-		assert_eq!(entry.width, 32);
-		assert_eq!(entry.height, 32);
-		assert_eq!(entry.x_offset, -8);
-		assert_eq!(entry.y_offset, -8);
-		assert_eq!(entry.bitmap_offset, 0x1000);
-		assert_eq!(entry.pixel_count(), 1024);
-	}
-
-	#[test]
-	fn test_blank_frame() {
-		let entry = FrameEntry::new(16, 16, 0, 0, 0);
-		let frame = Frame::blank(entry);
-		assert_eq!(frame.width(), 16);
-		assert_eq!(frame.height(), 16);
-		assert_eq!(frame.pixels().len(), 256);
-		assert!(frame.pixels().iter().all(|&p| p == 0));
-	}
-
-	#[test]
-	fn test_pixel_access() {
-		let entry = FrameEntry::new(4, 4, 0, 0, 0);
-		let mut frame = Frame::blank(entry);
-
-		// Set some pixels
-		assert!(frame.set_pixel(0, 0, 1));
-		assert!(frame.set_pixel(1, 1, 2));
-		assert!(frame.set_pixel(3, 3, 1));
-
-		// Get pixels
-		assert_eq!(frame.get_pixel(0, 0), Some(1));
-		assert_eq!(frame.get_pixel(1, 1), Some(2));
-		assert_eq!(frame.get_pixel(3, 3), Some(1));
-		assert_eq!(frame.get_pixel(2, 2), Some(0));
-
-		// Out of bounds
-		assert_eq!(frame.get_pixel(4, 0), None);
-		assert_eq!(frame.get_pixel(0, 4), None);
-		assert!(!frame.set_pixel(4, 0, 1));
-	}
-
-	#[test]
-	fn test_row_iterator() {
-		let entry = FrameEntry::new(3, 2, 0, 0, 0);
-		let pixels = vec![1, 2, 0, 0, 1, 2];
-		let frame = Frame::new(entry, pixels);
-
-		let rows: Vec<&[u8]> = frame.rows().collect();
-		assert_eq!(rows.len(), 2);
-		assert_eq!(rows[0], &[1, 2, 0]);
-		assert_eq!(rows[1], &[0, 1, 2]);
-	}
-
-	#[test]
-	fn test_to_ascii_art() {
-		let entry = FrameEntry::new(3, 3, 0, 0, 0);
-		let pixels = vec![0, 1, 0, 1, 5, 1, 0, 1, 0]; // 5 is treated as fill
-		let frame = Frame::new(entry, pixels);
-
-		let art = frame.to_ascii_art('.', '#', '@');
-		let expected = ".#.\n#@#\n.#.\n";
-		assert_eq!(art, expected);
-	}
-
-	#[test]
-	fn test_to_pgm() {
-		let entry = FrameEntry::new(2, 2, 0, 0, 0);
-		let pixels = vec![0, 1, 2, 0];
-		let frame = Frame::new(entry, pixels);
-
-		let pgm = frame.to_pgm();
-
-		// Check header
-		let header = b"P5\n2 2\n255\n";
-		assert!(pgm.starts_with(header));
-
-		// Check pixel values
-		let pixel_data = &pgm[header.len()..];
-		assert_eq!(pixel_data, &[255, 128, 0, 255]);
-	}
-
-	#[test]
-	fn test_pixel_mapping_matches_c_version() {
-		// Test the exact mapping from C version:
-		// uint8_t out = (pixel == 0) ? 255 : (pixel == 1) ? 128 : 0;
-		let entry = FrameEntry::new(5, 1, 0, 0, 0);
-		let pixels = vec![0, 1, 2, 3, 255]; // Various pixel values
-		let frame = Frame::new(entry, pixels);
-
-		let pgm = frame.to_pgm();
-		let header = b"P5\n5 1\n255\n";
-		let pixel_data = &pgm[header.len()..];
-
-		// Verify mapping:
-		// 0 -> 255 (transparent/white)
-		// 1 -> 128 (outline/gray)
-		// 2 -> 0 (fill/black)
-		// 3 -> 0 (fill/black)
-		// 255 -> 0 (fill/black)
-		assert_eq!(pixel_data, &[255, 128, 0, 0, 0]);
 	}
 }

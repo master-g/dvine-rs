@@ -93,6 +93,11 @@ path = "examples/file_types/main.rs"
 name = "efc_example"
 path = "examples/efc_example/main.rs"
 
+[[example]]
+name = "mfd_modifier"
+path = "examples/mfd_example/main.rs"
+
+
 # bin
 [profile.release]
 opt-level = 3

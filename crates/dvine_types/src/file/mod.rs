@@ -9,6 +9,7 @@ pub mod item;
 pub mod kg;
 pub mod mfd;
 pub mod pft;
+pub mod spr;
 pub mod startup_ini;
 
 /// Block size used in DSK files (2048 bytes / 0x0800)
@@ -34,6 +35,11 @@ pub use mfd::{
 	FrameIterator as MfdFrameIterator, FrameRowIterator as MfdFrameRowIterator,
 };
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
+pub use spr::{
+	Color as SprColor, ColorRowIterator as SprColorRowIterator, File as SprFile, Frame as SprFrame,
+	FrameEntry as SprFrameEntry, FrameIterator as SprFrameIterator,
+	FrameRowIterator as SprFrameRowIterator, Palette as SprPalette,
+};
 pub use startup_ini::{
 	OpeningMode as StartupOpeningMode, RenderMode as StartupRenderMode, StartupIni,
 	VgaMode as StartupVgaMode,

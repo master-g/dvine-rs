@@ -21,9 +21,10 @@
 //! - Random dots (mapping with PRNG)
 //! - Inverted original (simple `map`)
 
-use dvine_internal::prelude::*;
 use log::info;
 use std::path::PathBuf;
+
+use dvine_internal::prelude::*;
 
 fn main() {
 	env_logger::init();

@@ -44,11 +44,20 @@ pub use crate::file::{
 	// PFT types
 	PftFile,
 	PftHeader,
+
+	SprColor,
+
+	// Sprite types
+	SprFile,
+	SprFrame,
+	SprFrameEntry,
+	SprFrameIterator,
+	SprFrameRowIterator,
+	SprPalette,
 	// Startup INI types
 	StartupIni,
 	StartupOpeningMode,
 	StartupRenderMode,
-
 	StartupVgaMode,
 };
 

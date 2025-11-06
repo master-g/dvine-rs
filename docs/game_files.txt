@@ -27,8 +27,8 @@
 ├── SCN470.SCF # ❓ Scene data file
 ├── SCN522.SCF # ❓ Scene data file
 ├── SCNDAT.TBL # ❓ Scene data table file ?
-├── SPR.DSK # ❓ Sprite disk data
-├── SPR.PAL # ❓ Sprite palette file
+├── SPR.DSK # ✅ Sprite disk data
+├── SPR.PAL # ✅ Sprite palette file, 320bytes, 80 colors, RGBX format
 ├── SPR.PFT # ✅ Sprite PFT file
 ├── startup.ini # ✅ main configuration file for the game
 ├── SYSTEM.FNT # ✅ system font file, Shift-JIS encoding

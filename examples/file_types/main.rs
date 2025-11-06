@@ -7,6 +7,7 @@ mod font;
 mod item;
 mod kg;
 mod mfd;
+mod spr;
 mod startup_cfg;
 
 fn main() {
@@ -39,15 +40,18 @@ fn main() {
 				};
 				kg::test(kg_path, true);
 			}
+			"spr" => spr::test(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!(
-					"Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract"
+					"Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract, spr"
 				);
 			}
 		}
 	} else {
-		println!("Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract");
+		println!(
+			"Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract, spr"
+		);
 		println!("Usage: cargo run --example file-types -- <example_name>");
 	}
 }

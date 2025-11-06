@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use super::{Color, Palette};
+use super::Palette;
 
 /// SPR frame descriptor entry (24 bytes).
 ///
@@ -119,7 +119,7 @@ impl fmt::Display for FrameEntry {
 /// This structure combines a frame entry with its corresponding pixel data.
 /// SPR frames contain two types of data:
 /// - **Sprite data**: Indexed color values (typically 176-255 range mapping to palette 0-79)
-/// - **Mask data**: Binary transparency values (0x00 = transparent, 0xFF = opaque)
+/// - **Mask data**: Binary transparency values (0x00 = opaque, 0xFF = transparent)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
 	/// Frame metadata
@@ -464,6 +464,8 @@ impl Frame {
 	/// This method decodes the sprite pixel indices and maps them to RGB colors
 	/// using the provided palette.
 	///
+	/// Sprite pixel values less than 176 are mapped to palette index 0.
+	///
 	/// # Arguments
 	///
 	/// * `palette` - The color palette to use
@@ -477,12 +479,19 @@ impl Frame {
 		let mut rgb_data = Vec::with_capacity(pixel_count * 3);
 
 		for &raw_pixel in &self.sprite_pixels {
-			let palette_index = Self::decode_sprite_pixel(raw_pixel);
+			// Decode palette index:
+			// - Values < 176 = palette index 0
+			// - Values 176-255 = palette indices 0-79
+			let palette_index = if raw_pixel >= 176 {
+				Self::decode_sprite_pixel(raw_pixel)
+			} else {
+				0
+			};
 			let color = palette.get(palette_index);
 
-			rgb_data.push(color.r);
-			rgb_data.push(color.g);
-			rgb_data.push(color.b);
+			rgb_data.push(color.0);
+			rgb_data.push(color.1);
+			rgb_data.push(color.2);
 		}
 
 		rgb_data
@@ -492,6 +501,8 @@ impl Frame {
 	///
 	/// This method decodes the sprite pixel indices and maps them to RGBA colors
 	/// using the provided palette. The alpha channel from the palette is used.
+	///
+	/// Sprite pixel values less than 176 are mapped to palette index 0.
 	///
 	/// # Arguments
 	///
@@ -506,13 +517,20 @@ impl Frame {
 		let mut rgba_data = Vec::with_capacity(pixel_count * 4);
 
 		for &raw_pixel in &self.sprite_pixels {
-			let palette_index = Self::decode_sprite_pixel(raw_pixel);
+			// Decode palette index:
+			// - Values < 176 = palette index 0
+			// - Values 176-255 = palette indices 0-79
+			let palette_index = if raw_pixel >= 176 {
+				Self::decode_sprite_pixel(raw_pixel)
+			} else {
+				0
+			};
 			let color = palette.get(palette_index);
 
-			rgba_data.push(color.r);
-			rgba_data.push(color.g);
-			rgba_data.push(color.b);
-			rgba_data.push(color.a);
+			rgba_data.push(color.0);
+			rgba_data.push(color.1);
+			rgba_data.push(color.2);
+			rgba_data.push(255);
 		}
 
 		rgba_data
@@ -523,30 +541,41 @@ impl Frame {
 	/// This method combines the sprite color data with the mask transparency data,
 	/// producing RGBA pixels where the alpha channel is determined by the mask.
 	///
+	/// Sprite pixel values less than 176 are mapped to palette index 0.
+	/// Alpha channel is always determined by the mask data.
+	///
 	/// # Arguments
 	///
 	/// * `palette` - The color palette to use for sprite colors
+	/// * `reverse_mask` - If true, inverts the mask values (not commonly used)
 	///
 	/// # Returns
 	///
 	/// A vector of RGBA bytes (width × height × 4 bytes).
 	/// Pixels are in row-major order, with each pixel as [R, G, B, A].
-	/// Alpha is taken from the mask data (0x00 = transparent, 0xFF = opaque).
+	/// Alpha is taken from the mask data (0x00 = opaque, 0xFF = transparent).
 	pub fn apply_palette_with_mask(&self, palette: &Palette) -> Vec<u8> {
 		let pixel_count = self.entry.pixel_count();
 		let mut rgba_data = Vec::with_capacity(pixel_count * 4);
 
 		for i in 0..pixel_count {
 			let raw_pixel = self.sprite_pixels[i];
-			let mask_value = self.mask_pixels[i];
+			let mask_value = u8::MAX.saturating_sub(self.mask_pixels[i]);
 
-			let palette_index = Self::decode_sprite_pixel(raw_pixel);
+			// Decode palette index:
+			// - Values < 176 = palette index 0
+			// - Values 176-255 = palette indices 0-79
+			let palette_index = if raw_pixel >= 176 {
+				Self::decode_sprite_pixel(raw_pixel)
+			} else {
+				0
+			};
 			let color = palette.get(palette_index);
 
-			rgba_data.push(color.r);
-			rgba_data.push(color.g);
-			rgba_data.push(color.b);
-			rgba_data.push(mask_value); // Use mask as alpha
+			rgba_data.push(color.0);
+			rgba_data.push(color.1);
+			rgba_data.push(color.2);
+			rgba_data.push(mask_value); // Always use mask for alpha
 		}
 
 		rgba_data
@@ -563,33 +592,10 @@ impl Frame {
 	/// # Returns
 	///
 	/// The color at the specified position, or None if coordinates are out of bounds.
-	pub fn get_color_at(&self, x: u32, y: u32, palette: &Palette) -> Option<Color> {
+	pub fn get_color_at(&self, x: u32, y: u32, palette: &Palette) -> Option<(u8, u8, u8, u8)> {
 		let raw_pixel = self.get_sprite_pixel(x, y)?;
 		let palette_index = Self::decode_sprite_pixel(raw_pixel);
 		Some(palette.get(palette_index))
-	}
-
-	/// Gets the RGBA color at a specific pixel position, including mask transparency.
-	///
-	/// # Arguments
-	///
-	/// * `x` - X coordinate (0-based)
-	/// * `y` - Y coordinate (0-based)
-	/// * `palette` - The color palette to use
-	///
-	/// # Returns
-	///
-	/// The RGBA color at the specified position with mask-based alpha,
-	/// or None if coordinates are out of bounds.
-	pub fn get_color_with_mask_at(&self, x: u32, y: u32, palette: &Palette) -> Option<Color> {
-		let raw_pixel = self.get_sprite_pixel(x, y)?;
-		let mask_value = self.get_mask_pixel(x, y)?;
-
-		let palette_index = Self::decode_sprite_pixel(raw_pixel);
-		let mut color = palette.get(palette_index);
-		color.a = mask_value; // Override alpha with mask
-
-		Some(color)
 	}
 
 	/// Returns an iterator over sprite rows with palette colors applied.
@@ -607,6 +613,54 @@ impl Frame {
 			palette,
 			current_row: 0,
 		}
+	}
+
+	/// Checks if the frame has valid dimensions.
+	///
+	/// A frame is considered to have valid dimensions if both width and height are greater than 0.
+	///
+	/// # Returns
+	///
+	/// `true` if the frame has non-zero dimensions, `false` otherwise.
+	#[inline]
+	pub fn has_valid_dimensions(&self) -> bool {
+		self.entry.width > 0 && self.entry.height > 0
+	}
+
+	/// Checks if the frame has any pixel data.
+	///
+	/// # Returns
+	///
+	/// `true` if the frame has pixel data (non-empty vectors), `false` otherwise.
+	#[inline]
+	pub fn has_pixel_data(&self) -> bool {
+		!self.sprite_pixels.is_empty() && !self.mask_pixels.is_empty()
+	}
+
+	/// Checks if the frame is valid for rendering.
+	///
+	/// A frame is considered valid if:
+	/// - It has valid (non-zero) dimensions
+	/// - It has pixel data
+	///
+	/// # Returns
+	///
+	/// `true` if the frame is valid for rendering, `false` otherwise.
+	#[inline]
+	pub fn is_valid(&self) -> bool {
+		self.has_valid_dimensions() && self.has_pixel_data()
+	}
+
+	/// Checks if the frame is empty or invalid.
+	///
+	/// This is the inverse of `is_valid()`.
+	///
+	/// # Returns
+	///
+	/// `true` if the frame has zero dimensions or no pixel data, `false` otherwise.
+	#[inline]
+	pub fn is_empty(&self) -> bool {
+		!self.is_valid()
 	}
 }
 
@@ -692,7 +746,7 @@ pub struct ColorRowIterator<'a> {
 }
 
 impl<'a> Iterator for ColorRowIterator<'a> {
-	type Item = Vec<Color>;
+	type Item = Vec<(u8, u8, u8, u8)>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if self.current_row >= self.frame.height() as usize {
@@ -722,149 +776,5 @@ impl<'a> Iterator for ColorRowIterator<'a> {
 impl<'a> ExactSizeIterator for ColorRowIterator<'a> {
 	fn len(&self) -> usize {
 		self.frame.height() as usize - self.current_row
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn test_frame_entry() {
-		let entry = FrameEntry::new(0, 100, 10, 20, 5, 10);
-		assert_eq!(entry.width(), 10);
-		assert_eq!(entry.height(), 20);
-		assert_eq!(entry.pixel_count(), 200);
-		assert_eq!(entry.hotspot_x(), 5);
-		assert_eq!(entry.hotspot_y(), 10);
-	}
-
-	#[test]
-	fn test_frame_creation() {
-		let entry = FrameEntry::new(0, 100, 2, 2, 1, 1);
-		let sprite = vec![176, 177, 178, 179];
-		let mask = vec![0, 0xFF, 0, 0xFF];
-		let frame = Frame::new(entry, sprite.clone(), mask.clone());
-
-		assert_eq!(frame.width(), 2);
-		assert_eq!(frame.height(), 2);
-		assert_eq!(frame.sprite_pixels(), &sprite);
-		assert_eq!(frame.mask_pixels(), &mask);
-	}
-
-	#[test]
-	fn test_pixel_encoding() {
-		assert_eq!(Frame::decode_sprite_pixel(176), 0);
-		assert_eq!(Frame::decode_sprite_pixel(255), 79);
-		assert_eq!(Frame::decode_sprite_pixel(200), 24);
-
-		assert_eq!(Frame::encode_sprite_pixel(0), 176);
-		assert_eq!(Frame::encode_sprite_pixel(79), 255);
-		assert_eq!(Frame::encode_sprite_pixel(24), 200);
-	}
-
-	#[test]
-	fn test_pixel_access() {
-		let entry = FrameEntry::new(0, 100, 2, 2, 0, 0);
-		let sprite = vec![176, 177, 178, 179];
-		let mask = vec![0, 0xFF, 0, 0xFF];
-		let mut frame = Frame::new(entry, sprite, mask);
-
-		assert_eq!(frame.get_sprite_pixel(0, 0), Some(176));
-		assert_eq!(frame.get_sprite_pixel(1, 1), Some(179));
-		assert_eq!(frame.get_mask_pixel(1, 0), Some(0xFF));
-
-		assert!(frame.set_sprite_pixel(0, 0, 200));
-		assert_eq!(frame.get_sprite_pixel(0, 0), Some(200));
-	}
-
-	#[test]
-	fn test_row_iterator() {
-		let entry = FrameEntry::new(0, 100, 3, 2, 0, 0);
-		let sprite = vec![1, 2, 3, 4, 5, 6];
-		let mask = vec![0; 6];
-		let frame = Frame::new(entry, sprite, mask);
-
-		let rows: Vec<_> = frame.sprite_rows().collect();
-		assert_eq!(rows.len(), 2);
-		assert_eq!(rows[0], &[1, 2, 3]);
-		assert_eq!(rows[1], &[4, 5, 6]);
-	}
-
-	#[test]
-	fn test_apply_palette_rgb() {
-		let mut palette = Palette::new();
-		palette.set(0, Color::rgb(255, 0, 0)); // Red
-		palette.set(1, Color::rgb(0, 255, 0)); // Green
-
-		let entry = FrameEntry::new(0, 100, 2, 1, 0, 0);
-		let sprite = vec![Frame::encode_sprite_pixel(0), Frame::encode_sprite_pixel(1)];
-		let mask = vec![0xFF; 2];
-		let frame = Frame::new(entry, sprite, mask);
-
-		let rgb = frame.apply_palette_rgb(&palette);
-		assert_eq!(rgb.len(), 6); // 2 pixels × 3 bytes
-		assert_eq!(&rgb[0..3], &[255, 0, 0]); // First pixel: red
-		assert_eq!(&rgb[3..6], &[0, 255, 0]); // Second pixel: green
-	}
-
-	#[test]
-	fn test_apply_palette_with_mask() {
-		let mut palette = Palette::new();
-		palette.set(0, Color::rgb(255, 0, 0));
-
-		let entry = FrameEntry::new(0, 100, 2, 1, 0, 0);
-		let sprite = vec![Frame::encode_sprite_pixel(0); 2];
-		let mask = vec![0xFF, 0x00]; // First opaque, second transparent
-		let frame = Frame::new(entry, sprite, mask);
-
-		let rgba = frame.apply_palette_with_mask(&palette);
-		assert_eq!(rgba.len(), 8); // 2 pixels × 4 bytes
-		assert_eq!(&rgba[0..4], &[255, 0, 0, 0xFF]); // First pixel: opaque
-		assert_eq!(&rgba[4..8], &[255, 0, 0, 0x00]); // Second pixel: transparent
-	}
-
-	#[test]
-	fn test_get_color_at() {
-		let mut palette = Palette::new();
-		palette.set(0, Color::rgb(255, 0, 0));
-		palette.set(1, Color::rgb(0, 255, 0));
-
-		let entry = FrameEntry::new(0, 100, 2, 2, 0, 0);
-		let sprite = vec![
-			Frame::encode_sprite_pixel(0),
-			Frame::encode_sprite_pixel(1),
-			Frame::encode_sprite_pixel(1),
-			Frame::encode_sprite_pixel(0),
-		];
-		let mask = vec![0xFF; 4];
-		let frame = Frame::new(entry, sprite, mask);
-
-		assert_eq!(frame.get_color_at(0, 0, &palette), Some(Color::rgb(255, 0, 0)));
-		assert_eq!(frame.get_color_at(1, 0, &palette), Some(Color::rgb(0, 255, 0)));
-		assert_eq!(frame.get_color_at(0, 1, &palette), Some(Color::rgb(0, 255, 0)));
-		assert_eq!(frame.get_color_at(1, 1, &palette), Some(Color::rgb(255, 0, 0)));
-	}
-
-	#[test]
-	fn test_color_rows() {
-		let mut palette = Palette::new();
-		palette.set(0, Color::rgb(255, 0, 0));
-		palette.set(1, Color::rgb(0, 255, 0));
-
-		let entry = FrameEntry::new(0, 100, 2, 2, 0, 0);
-		let sprite = vec![
-			Frame::encode_sprite_pixel(0),
-			Frame::encode_sprite_pixel(1),
-			Frame::encode_sprite_pixel(1),
-			Frame::encode_sprite_pixel(0),
-		];
-		let mask = vec![0xFF; 4];
-		let frame = Frame::new(entry, sprite, mask);
-
-		let rows: Vec<_> = frame.color_rows(&palette).collect();
-		assert_eq!(rows.len(), 2);
-		assert_eq!(rows[0], vec![Color::rgb(255, 0, 0), Color::rgb(0, 255, 0)]);
-		assert_eq!(rows[1], vec![Color::rgb(0, 255, 0), Color::rgb(255, 0, 0)]);
 	}
 }

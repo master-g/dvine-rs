@@ -45,8 +45,6 @@ pub use crate::file::{
 	PftFile,
 	PftHeader,
 
-	SprColor,
-
 	// Sprite types
 	SprFile,
 	SprFrame,

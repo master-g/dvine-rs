@@ -36,7 +36,7 @@ pub use mfd::{
 };
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use spr::{
-	Color as SprColor, ColorRowIterator as SprColorRowIterator, File as SprFile, Frame as SprFrame,
+	ColorRowIterator as SprColorRowIterator, File as SprFile, Frame as SprFrame,
 	FrameEntry as SprFrameEntry, FrameIterator as SprFrameIterator,
 	FrameRowIterator as SprFrameRowIterator, Palette as SprPalette,
 };

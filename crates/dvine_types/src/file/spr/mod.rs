@@ -113,7 +113,7 @@ pub mod frame;
 pub mod palette;
 
 pub use frame::{ColorRowIterator, Frame, FrameEntry, FrameRowIterator};
-pub use palette::{Color, Palette};
+pub use palette::Palette;
 
 /// SPR file constants.
 pub mod constants {

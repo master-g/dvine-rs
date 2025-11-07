@@ -3,7 +3,6 @@
 mod extract;
 mod font;
 mod item;
-mod startup_cfg;
 
 fn main() {
 	// Initialize logger with default level set to info if RUST_LOG is not set
@@ -23,7 +22,6 @@ fn main() {
 			}
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
-			"startup" => startup_cfg::test(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!(

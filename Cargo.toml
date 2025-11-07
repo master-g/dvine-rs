@@ -95,6 +95,7 @@ encoding_rs.workspace = true
 hex.workspace = true
 hound.workspace = true
 image.workspace = true
+inquire = "0.7"
 rodio = "0.19"
 serde_json.workspace = true
 
@@ -117,6 +118,10 @@ path = "examples/efc_utils/main.rs"
 [[example]]
 name = "spr_utils"
 path = "examples/spr_utils/main.rs"
+
+[[example]]
+name = "startup_ini_utils"
+path = "examples/startup_ini_utils/main.rs"
 
 
 # bin

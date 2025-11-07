@@ -114,6 +114,10 @@ path = "examples/mfd_utils/main.rs"
 name = "efc_utils"
 path = "examples/efc_utils/main.rs"
 
+[[example]]
+name = "spr_utils"
+path = "examples/spr_utils/main.rs"
+
 
 # bin
 [profile.release]

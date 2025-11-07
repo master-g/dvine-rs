@@ -3,7 +3,6 @@
 mod extract;
 mod font;
 mod item;
-mod spr;
 mod startup_cfg;
 
 fn main() {
@@ -25,7 +24,6 @@ fn main() {
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),
-			"spr" => spr::test(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
 				println!(

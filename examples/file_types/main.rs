@@ -1,7 +1,6 @@
 //! Test file types for `dvine-rs`
 
 mod extract;
-mod font;
 mod item;
 
 fn main() {
@@ -20,7 +19,6 @@ fn main() {
 				};
 				extract::extract_pft_dsk(filename);
 			}
-			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			_ => {
 				println!("Unknown example: {}", args[1]);

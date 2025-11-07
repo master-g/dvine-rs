@@ -123,6 +123,10 @@ path = "examples/spr_utils/main.rs"
 name = "startup_ini_utils"
 path = "examples/startup_ini_utils/main.rs"
 
+[[example]]
+name = "fnt_utils"
+path = "examples/fnt_utils/main.rs"
+
 
 # bin
 [profile.release]

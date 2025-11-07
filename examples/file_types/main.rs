@@ -1,11 +1,8 @@
 //! Test file types for `dvine-rs`
 
-mod efc;
-mod efc_builder;
 mod extract;
 mod font;
 mod item;
-mod kg;
 mod spr;
 mod startup_cfg;
 
@@ -25,19 +22,9 @@ fn main() {
 				};
 				extract::extract_pft_dsk(filename);
 			}
-			"efc" => efc::test(),
-			"efc_builder" => efc_builder::run().unwrap(),
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
 			"startup" => startup_cfg::test(),
-			"kg" => {
-				let kg_path = if args.len() > 2 {
-					&args[2]
-				} else {
-					"kg_extract"
-				};
-				kg::test(kg_path, true);
-			}
 			"spr" => spr::test(),
 			_ => {
 				println!("Unknown example: {}", args[1]);

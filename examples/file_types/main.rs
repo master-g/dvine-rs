@@ -1,6 +1,5 @@
 //! Test file types for `dvine-rs`
 
-mod extract;
 mod item;
 
 fn main() {
@@ -11,20 +10,9 @@ fn main() {
 	let args: Vec<String> = std::env::args().collect();
 	if args.len() > 1 {
 		match args[1].as_str() {
-			"extract" => {
-				let filename = if args.len() > 2 {
-					&args[2]
-				} else {
-					"anm"
-				};
-				extract::extract_pft_dsk(filename);
-			}
 			"item" => item::test().unwrap(),
 			_ => {
 				println!("Unknown example: {}", args[1]);
-				println!(
-					"Available examples: efc, efc_builder, font, item, mfd, startup, kg, extract, spr"
-				);
 			}
 		}
 	} else {

@@ -93,15 +93,14 @@ clap = { workspace = true, features = [
 ] }
 encoding_rs.workspace = true
 hex.workspace = true
+hound.workspace = true
 image.workspace = true
+rodio = "0.19"
+serde_json.workspace = true
 
 [[example]]
 name = "file-types"
 path = "examples/file_types/main.rs"
-
-[[example]]
-name = "efc_example"
-path = "examples/efc_example/main.rs"
 
 [[example]]
 name = "kg_utils"
@@ -110,6 +109,10 @@ path = "examples/kg_utils/main.rs"
 [[example]]
 name = "mfd_utils"
 path = "examples/mfd_utils/main.rs"
+
+[[example]]
+name = "efc_utils"
+path = "examples/efc_utils/main.rs"
 
 
 # bin

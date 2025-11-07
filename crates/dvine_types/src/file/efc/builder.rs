@@ -203,7 +203,11 @@ impl FileBuilder {
 		let mut new_index_table = [0u32; MAX_EFFECTS];
 		let mut current_offset = index_table_size as u32;
 
-		for (id, sound) in &self.effects {
+		// Sort effects by ID to ensure offsets are in ascending order
+		let mut sorted_effects: Vec<_> = self.effects.iter().collect();
+		sorted_effects.sort_by_key(|(id, _)| *id);
+
+		for (id, sound) in sorted_effects {
 			// Record offset in index table
 			new_index_table[*id] = current_offset;
 

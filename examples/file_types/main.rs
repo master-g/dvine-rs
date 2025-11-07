@@ -6,7 +6,6 @@ mod extract;
 mod font;
 mod item;
 mod kg;
-mod mfd;
 mod spr;
 mod startup_cfg;
 
@@ -30,7 +29,6 @@ fn main() {
 			"efc_builder" => efc_builder::run().unwrap(),
 			"font" => font::test_fonts(),
 			"item" => item::test().unwrap(),
-			"mfd" => mfd::test_mfd(),
 			"startup" => startup_cfg::test(),
 			"kg" => {
 				let kg_path = if args.len() > 2 {

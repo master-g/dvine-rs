@@ -42,7 +42,7 @@ fn main() {
 		Ok(file) => {
 			info!("✓ Loaded successfully");
 			info!("  Total frames: {}", file.frame_count());
-			info!("  File size: {} bytes\n", file.to_bytes().len());
+			info!("  File size: {} bytes\n", file.to_bytes().unwrap().len());
 			file
 		}
 		Err(e) => {
@@ -86,10 +86,10 @@ fn main() {
 
 /// Modifies frames using the improved ergonomic API
 fn modify_frames_improved(mfd: &mut MfdFile, n: usize) {
-	let frame_count = mfd.frame_count().min(n as u32);
+	let frame_count = mfd.frame_count().min(n);
 
-	for i in 0..frame_count as usize {
-		if let Some(mut frame) = mfd.get_frame(i) {
+	for i in 0..frame_count {
+		if let Some(frame) = mfd.frame_mut(i) {
 			info!(
 				"  Frame #{}: Applying {} pattern ({}x{})",
 				i,
@@ -100,21 +100,18 @@ fn modify_frames_improved(mfd: &mut MfdFile, n: usize) {
 
 			// Apply pattern using improved API
 			match i % 10 {
-				0 => pattern_checkerboard_improved(&mut frame),
-				1 => pattern_border_improved(&mut frame),
-				2 => pattern_diagonal_stripes_improved(&mut frame),
-				3 => pattern_concentric_circles_improved(&mut frame),
-				4 => pattern_spiral_improved(&mut frame),
-				5 => pattern_cross_improved(&mut frame),
-				6 => pattern_diamond_improved(&mut frame),
-				7 => pattern_gradient_improved(&mut frame),
-				8 => pattern_random_dots_improved(&mut frame),
-				9 => pattern_inverted_improved(&mut frame),
+				0 => pattern_checkerboard_improved(frame),
+				1 => pattern_border_improved(frame),
+				2 => pattern_diagonal_stripes_improved(frame),
+				3 => pattern_concentric_circles_improved(frame),
+				4 => pattern_spiral_improved(frame),
+				5 => pattern_cross_improved(frame),
+				6 => pattern_diamond_improved(frame),
+				7 => pattern_gradient_improved(frame),
+				8 => pattern_random_dots_improved(frame),
+				9 => pattern_inverted_improved(frame),
 				_ => {}
 			}
-
-			// Update the frame back into the MFD file
-			mfd.update_frame(i, frame.pixels());
 		}
 	}
 
@@ -310,7 +307,7 @@ fn export_preview(mfd: &MfdFile, count: usize) {
 	}
 
 	let mut success = 0;
-	for (i, frame) in mfd.iter().take(count).enumerate() {
+	for (i, frame) in mfd.frames().iter().take(count).enumerate() {
 		let filename = format!("frame_{:02}_{}.pgm", i, get_pattern_name(i));
 		let output_path = output_dir.join(&filename);
 
@@ -332,11 +329,11 @@ fn show_comparison(original_path: &PathBuf, modified_mfd: &MfdFile) {
 	};
 
 	// Get both frames
-	let Some(original_frame) = original.get_frame(0) else {
+	let Some(original_frame) = original.frame(0) else {
 		return;
 	};
 
-	let Some(modified_frame) = modified_mfd.get_frame(0) else {
+	let Some(modified_frame) = modified_mfd.frame(0) else {
 		return;
 	};
 

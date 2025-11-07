@@ -2,59 +2,23 @@
 
 use std::fmt::Display;
 
-/// Frame entry structure from the glyph table.
-///
-/// Each frame contains metadata about a mouse cursor image:
-/// - Dimensions (`width` and `height`)
-/// - Hotspot offset (`x_offset`, `y_offset`) - the point where the cursor clicks
-/// - Bitmap data offset in the file
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FrameEntry {
-	/// Frame width in pixels
-	pub width: u16,
-	/// Frame height in pixels
-	pub height: u16,
-	/// Hotspot X offset (signed)
-	pub x_offset: i16,
-	/// Hotspot Y offset (signed)
-	pub y_offset: i16,
-	/// Bitmap data offset (relative to `0x10` in the file)
-	pub bitmap_offset: u32,
-}
-
-impl FrameEntry {
-	/// Creates a new `FrameEntry`.
-	pub fn new(width: u16, height: u16, x_offset: i16, y_offset: i16, bitmap_offset: u32) -> Self {
-		Self {
-			width,
-			height,
-			x_offset,
-			y_offset,
-			bitmap_offset,
-		}
-	}
-
-	/// Returns the total number of pixels in this frame.
-	pub fn pixel_count(&self) -> usize {
-		self.width as usize * self.height as usize
-	}
-}
-
-impl Display for FrameEntry {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"Frame: {}x{} hotspot=({},{}) bitmap_offset=0x{:08X}",
-			self.width, self.height, self.x_offset, self.y_offset, self.bitmap_offset
-		)
-	}
-}
-
 /// Frame structure representing a complete mouse cursor frame with pixel data.
+///
+/// This structure holds both metadata and pixel data for a single frame.
+/// Pixels are stored as indexed bytes where:
+/// - `0`: Transparent pixel
+/// - `1`: Outline pixel
+/// - Other values (typically `2`): Fill pixel
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Frame {
-	/// Frame metadata
-	entry: FrameEntry,
+	/// Frame width in pixels
+	width: u16,
+	/// Frame height in pixels
+	height: u16,
+	/// Hotspot X offset (signed) - the point where the cursor clicks
+	x_offset: i16,
+	/// Hotspot Y offset (signed) - the point where the cursor clicks
+	y_offset: i16,
 	/// Pixel data (indexed color: 0=transparent, 1=outline, other=fill)
 	pixels: Vec<u8>,
 }
@@ -64,71 +28,107 @@ impl Frame {
 	///
 	/// # Arguments
 	///
-	/// * `entry` - Frame metadata
+	/// * `width` - Frame width in pixels
+	/// * `height` - Frame height in pixels
+	/// * `x_offset` - Hotspot X offset
+	/// * `y_offset` - Hotspot Y offset
 	/// * `pixels` - Pixel data (length must match width * height)
 	///
 	/// # Panics
 	///
 	/// Panics if the pixel data length doesn't match the frame dimensions.
-	pub fn new(entry: FrameEntry, pixels: Vec<u8>) -> Self {
+	pub fn new(width: u16, height: u16, x_offset: i16, y_offset: i16, pixels: Vec<u8>) -> Self {
 		assert_eq!(
 			pixels.len(),
-			entry.pixel_count(),
+			width as usize * height as usize,
 			"Pixel data length must match frame dimensions"
 		);
 		Self {
-			entry,
+			width,
+			height,
+			x_offset,
+			y_offset,
 			pixels,
 		}
 	}
 
 	/// Creates a blank frame with all pixels set to transparent (0).
-	pub fn blank(entry: FrameEntry) -> Self {
-		let pixels = vec![0; entry.pixel_count()];
+	///
+	/// # Arguments
+	///
+	/// * `width` - Frame width in pixels
+	/// * `height` - Frame height in pixels
+	/// * `x_offset` - Hotspot X offset
+	/// * `y_offset` - Hotspot Y offset
+	pub fn blank(width: u16, height: u16, x_offset: i16, y_offset: i16) -> Self {
+		let pixel_count = width as usize * height as usize;
 		Self {
-			entry,
-			pixels,
+			width,
+			height,
+			x_offset,
+			y_offset,
+			pixels: vec![0; pixel_count],
 		}
 	}
 
-	/// Returns the frame entry metadata.
-	pub fn entry(&self) -> &FrameEntry {
-		&self.entry
-	}
-
 	/// Returns the frame width in pixels.
+	#[inline]
 	pub fn width(&self) -> u16 {
-		self.entry.width
+		self.width
 	}
 
 	/// Returns the frame height in pixels.
+	#[inline]
 	pub fn height(&self) -> u16 {
-		self.entry.height
+		self.height
 	}
 
 	/// Returns the hotspot X offset.
+	#[inline]
 	pub fn x_offset(&self) -> i16 {
-		self.entry.x_offset
+		self.x_offset
 	}
 
 	/// Returns the hotspot Y offset.
+	#[inline]
 	pub fn y_offset(&self) -> i16 {
-		self.entry.y_offset
+		self.y_offset
 	}
 
-	/// Returns the bitmap offset.
-	pub fn bitmap_offset(&self) -> u32 {
-		self.entry.bitmap_offset
+	/// Sets the hotspot X offset.
+	#[inline]
+	pub fn set_x_offset(&mut self, offset: i16) {
+		self.x_offset = offset;
+	}
+
+	/// Sets the hotspot Y offset.
+	#[inline]
+	pub fn set_y_offset(&mut self, offset: i16) {
+		self.y_offset = offset;
+	}
+
+	/// Returns the total number of pixels in this frame.
+	#[inline]
+	pub fn pixel_count(&self) -> usize {
+		self.width as usize * self.height as usize
 	}
 
 	/// Returns a reference to the pixel data.
+	#[inline]
 	pub fn pixels(&self) -> &[u8] {
 		&self.pixels
 	}
 
 	/// Returns a mutable reference to the pixel data.
+	#[inline]
 	pub fn pixels_mut(&mut self) -> &mut [u8] {
 		&mut self.pixels
+	}
+
+	/// Consumes the frame and returns the pixel data.
+	#[inline]
+	pub fn into_pixels(self) -> Vec<u8> {
+		self.pixels
 	}
 
 	/// Gets the pixel value at (x, y).
@@ -141,11 +141,12 @@ impl Frame {
 	/// # Returns
 	///
 	/// The pixel value (0=transparent, 1=outline, other=fill), or None if coordinates are out of bounds.
+	#[inline]
 	pub fn get_pixel(&self, x: u16, y: u16) -> Option<u8> {
-		if x >= self.entry.width || y >= self.entry.height {
+		if x >= self.width || y >= self.height {
 			return None;
 		}
-		let index = y as usize * self.entry.width as usize + x as usize;
+		let index = y as usize * self.width as usize + x as usize;
 		self.pixels.get(index).copied()
 	}
 
@@ -160,17 +161,86 @@ impl Frame {
 	/// # Returns
 	///
 	/// `true` if the pixel was set, `false` if coordinates are out of bounds.
+	#[inline]
 	pub fn set_pixel(&mut self, x: u16, y: u16, value: u8) -> bool {
-		if x >= self.entry.width || y >= self.entry.height {
+		if x >= self.width || y >= self.height {
 			return false;
 		}
-		let index = y as usize * self.entry.width as usize + x as usize;
+		let index = y as usize * self.width as usize + x as usize;
 		if let Some(pixel) = self.pixels.get_mut(index) {
 			*pixel = value;
 			true
 		} else {
 			false
 		}
+	}
+
+	/// Converts indexed pixel data to RGBA format.
+	///
+	/// Uses a default color palette:
+	/// - 0 (transparent): `(0, 0, 0, 0)` - fully transparent
+	/// - 1 (outline): `(0, 0, 0, 255)` - opaque black
+	/// - other (fill): `(255, 255, 255, 255)` - opaque white
+	///
+	/// # Returns
+	///
+	/// A vector of RGBA bytes (4 bytes per pixel: R, G, B, A)
+	pub fn to_rgba(&self) -> Vec<u8> {
+		self.to_rgba_with_palette(&DEFAULT_RGBA_PALETTE)
+	}
+
+	/// Converts indexed pixel data to RGBA format with a custom palette.
+	///
+	/// # Arguments
+	///
+	/// * `palette` - Array of 3 RGBA colors `[transparent, outline, fill]`
+	///   Each color is represented as `[R, G, B, A]`
+	///
+	/// # Returns
+	///
+	/// A vector of RGBA bytes (4 bytes per pixel)
+	///
+	/// # Example
+	///
+	/// ```
+	/// use dvine_types::file::mfd::Frame;
+	///
+	/// let frame = Frame::blank(8, 8, 0, 0);
+	/// let palette = [
+	///     [0, 0, 0, 0],       // transparent: transparent
+	///     [255, 0, 0, 255],   // outline: red
+	///     [0, 255, 0, 255],   // fill: green
+	/// ];
+	/// let rgba = frame.to_rgba_with_palette(&palette);
+	/// ```
+	pub fn to_rgba_with_palette(&self, palette: &[[u8; 4]; 3]) -> Vec<u8> {
+		let mut rgba = Vec::with_capacity(self.pixel_count() * 4);
+
+		for &pixel in &self.pixels {
+			let color = match pixel {
+				0 => &palette[0], // transparent
+				1 => &palette[1], // outline
+				_ => &palette[2], // fill
+			};
+			rgba.extend_from_slice(color);
+		}
+
+		rgba
+	}
+
+	/// Converts indexed pixel data to RGBA format with custom colors.
+	///
+	/// # Arguments
+	///
+	/// * `transparent` - RGBA color for transparent pixels (index 0)
+	/// * `outline` - RGBA color for outline pixels (index 1)
+	/// * `fill` - RGBA color for fill pixels (other indices)
+	///
+	/// # Returns
+	///
+	/// A vector of RGBA bytes (4 bytes per pixel)
+	pub fn to_rgba_custom(&self, transparent: [u8; 4], outline: [u8; 4], fill: [u8; 4]) -> Vec<u8> {
+		self.to_rgba_with_palette(&[transparent, outline, fill])
 	}
 
 	/// Converts the frame to ASCII art representation.
@@ -181,11 +251,13 @@ impl Frame {
 	/// * `outline` - Character to use for outline pixels (1)
 	/// * `fill` - Character to use for fill pixels (other values)
 	pub fn to_ascii_art(&self, transparent: char, outline: char, fill: char) -> String {
-		let mut art = String::new();
+		let mut art = String::with_capacity(
+			(self.width as usize + 1) * self.height as usize, // +1 for newline
+		);
 
-		for y in 0..self.entry.height {
-			for x in 0..self.entry.width {
-				let index = y as usize * self.entry.width as usize + x as usize;
+		for y in 0..self.height {
+			for x in 0..self.width {
+				let index = y as usize * self.width as usize + x as usize;
 				let pixel = self.pixels[index];
 				let ch = match pixel {
 					0 => transparent,
@@ -218,7 +290,7 @@ impl Frame {
 		let mut pgm = Vec::new();
 
 		// PGM header
-		let header = format!("P5\n{} {}\n255\n", self.entry.width, self.entry.height);
+		let header = format!("P5\n{} {}\n255\n", self.width, self.height);
 		pgm.extend_from_slice(header.as_bytes());
 
 		// Pixel data
@@ -251,10 +323,9 @@ impl Frame {
 	/// # Example
 	///
 	/// ```
-	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	/// use dvine_types::file::mfd::Frame;
 	///
-	/// let entry = FrameEntry::new(8, 8, 0, 0, 0);
-	/// let mut frame = Frame::blank(entry);
+	/// let mut frame = Frame::blank(8, 8, 0, 0);
 	/// frame.fill(2); // Fill with solid color
 	/// assert!(frame.pixels().iter().all(|&p| p == 2));
 	/// ```
@@ -277,7 +348,7 @@ impl Frame {
 	/// `true` if the region was filled, `false` if it's out of bounds
 	pub fn fill_rect(&mut self, x: u16, y: u16, width: u16, height: u16, value: u8) -> bool {
 		// Check bounds
-		if x + width > self.entry.width || y + height > self.entry.height {
+		if x + width > self.width || y + height > self.height {
 			return false;
 		}
 
@@ -299,10 +370,9 @@ impl Frame {
 	/// # Example
 	///
 	/// ```
-	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	/// use dvine_types::file::mfd::Frame;
 	///
-	/// let entry = FrameEntry::new(4, 4, 0, 0, 0);
-	/// let mut frame = Frame::blank(entry);
+	/// let mut frame = Frame::blank(4, 4, 0, 0);
 	/// frame.fill(1);
 	///
 	/// // Invert all pixels
@@ -326,10 +396,9 @@ impl Frame {
 	/// # Example
 	///
 	/// ```
-	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	/// use dvine_types::file::mfd::Frame;
 	///
-	/// let entry = FrameEntry::new(8, 8, 0, 0, 0);
-	/// let mut frame = Frame::blank(entry);
+	/// let mut frame = Frame::blank(8, 8, 0, 0);
 	///
 	/// // Create a checkerboard pattern
 	/// frame.map_pixels_with_coords(|x, y, _| {
@@ -340,27 +409,12 @@ impl Frame {
 	where
 		F: Fn(u16, u16, u8) -> u8,
 	{
-		for y in 0..self.entry.height {
-			for x in 0..self.entry.width {
-				let idx = y as usize * self.entry.width as usize + x as usize;
+		for y in 0..self.height {
+			for x in 0..self.width {
+				let idx = y as usize * self.width as usize + x as usize;
 				self.pixels[idx] = f(x, y, self.pixels[idx]);
 			}
 		}
-	}
-
-	/// Clones the frame with new pixel data.
-	///
-	/// This preserves the frame entry metadata but replaces the pixel data.
-	///
-	/// # Arguments
-	///
-	/// * `pixels` - New pixel data (must match frame dimensions)
-	///
-	/// # Panics
-	///
-	/// Panics if the pixel data length doesn't match the frame dimensions.
-	pub fn with_pixels(&self, pixels: Vec<u8>) -> Self {
-		Self::new(self.entry, pixels)
 	}
 
 	/// Creates a copy of this frame with a function applied to all pixels.
@@ -372,10 +426,9 @@ impl Frame {
 	/// # Example
 	///
 	/// ```
-	/// use dvine_types::file::mfd::{Frame, FrameEntry};
+	/// use dvine_types::file::mfd::Frame;
 	///
-	/// let entry = FrameEntry::new(4, 4, 0, 0, 0);
-	/// let frame = Frame::blank(entry);
+	/// let frame = Frame::blank(4, 4, 0, 0);
 	///
 	/// // Create an inverted copy
 	/// let inverted = frame.map(|p| if p == 0 { 2 } else { 0 });
@@ -385,13 +438,23 @@ impl Frame {
 		F: Fn(u8) -> u8,
 	{
 		let pixels: Vec<u8> = self.pixels.iter().map(|&p| f(p)).collect();
-		Self::new(self.entry, pixels)
+		Self {
+			width: self.width,
+			height: self.height,
+			x_offset: self.x_offset,
+			y_offset: self.y_offset,
+			pixels,
+		}
 	}
 }
 
 impl Display for Frame {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.entry)
+		write!(
+			f,
+			"Frame: {}x{} hotspot=({},{})",
+			self.width, self.height, self.x_offset, self.y_offset
+		)
 	}
 }
 
@@ -406,15 +469,37 @@ impl<'a> Iterator for FrameRowIterator<'a> {
 	type Item = &'a [u8];
 
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.current_row >= self.frame.entry.height {
+		if self.current_row >= self.frame.height {
 			return None;
 		}
 
-		let width = self.frame.entry.width as usize;
+		let width = self.frame.width as usize;
 		let start = self.current_row as usize * width;
 		let end = start + width;
 
 		self.current_row += 1;
 		Some(&self.frame.pixels[start..end])
 	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let remaining = (self.frame.height - self.current_row) as usize;
+		(remaining, Some(remaining))
+	}
 }
+
+impl<'a> ExactSizeIterator for FrameRowIterator<'a> {
+	fn len(&self) -> usize {
+		(self.frame.height - self.current_row) as usize
+	}
+}
+
+/// Default RGBA palette for MFD frames.
+///
+/// - Index 0 (transparent): `[0, 0, 0, 0]` - fully transparent
+/// - Index 1 (outline): `[0, 0, 0, 255]` - opaque black
+/// - Index 2+ (fill): `[255, 255, 255, 255]` - opaque white
+pub const DEFAULT_RGBA_PALETTE: [[u8; 4]; 3] = [
+	[0, 0, 0, 0],         // transparent
+	[0, 0, 0, 255],       // outline: black
+	[255, 255, 255, 255], // fill: white
+];

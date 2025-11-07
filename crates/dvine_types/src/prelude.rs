@@ -38,8 +38,8 @@ pub use crate::file::{
 
 	// MFD types
 	MfdFile,
+	MfdFileBuilder,
 	MfdFrame,
-	MfdFrameEntry,
 
 	// PFT types
 	PftFile,
@@ -68,9 +68,7 @@ pub use crate::file::fnt::glyph::{Glyph, GlyphBitmap, GlyphBitmapLineIterator};
 
 // MFD types
 #[doc(inline)]
-pub use crate::file::mfd::{
-	FrameIterator as MfdFrameIterator, FrameRowIterator as MfdFrameRowIterator,
-};
+pub use crate::file::mfd::{DEFAULT_RGBA_PALETTE, FrameRowIterator as MfdFrameRowIterator};
 
 // Re-export the file module for advanced usage
 #[doc(inline)]

@@ -31,8 +31,8 @@ pub use fnt::{
 pub use item::{File as ItemFile, ItemRaw, entry::ItemEntry};
 pub use kg::{Compression as KgCompressionType, File as KgFile, Header as KgHeader};
 pub use mfd::{
-	File as MfdFile, Frame as MfdFrame, FrameEntry as MfdFrameEntry,
-	FrameIterator as MfdFrameIterator, FrameRowIterator as MfdFrameRowIterator,
+	DEFAULT_RGBA_PALETTE, File as MfdFile, FileBuilder as MfdFileBuilder, Frame as MfdFrame,
+	FrameRowIterator as MfdFrameRowIterator,
 };
 pub use pft::{Entry, File as PftFile, Header as PftHeader};
 pub use spr::{

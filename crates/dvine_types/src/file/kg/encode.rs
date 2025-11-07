@@ -457,7 +457,13 @@ pub fn compress(rgb_data: &[u8], width: u16, height: u16) -> Result<Vec<u8>, DvF
 	let compressed_data = state.writer.into_data();
 
 	// Build file structure
-	let padding = Header::default().create_default_padding();
+	// Create a temporary header with correct dimensions for padding generation
+	let temp_header = Header {
+		width,
+		height,
+		..Header::default()
+	};
+	let padding = temp_header.create_default_padding();
 	let palette_offset = (Header::SIZE + padding.len()) as u32;
 	let palette_bytes = palette_to_bgr(&palette);
 	let data_offset = palette_offset + palette_bytes.len() as u32;

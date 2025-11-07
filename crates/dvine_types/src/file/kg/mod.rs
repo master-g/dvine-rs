@@ -342,6 +342,9 @@ impl Header {
 		bytes[8..12].copy_from_slice(&self.reserved_1);
 		bytes[12..16].copy_from_slice(&self.palette_offset.to_le_bytes());
 		bytes[16..20].copy_from_slice(&self.data_offset.to_le_bytes());
+		bytes[20..24].copy_from_slice(&self.file_size.to_le_bytes());
+		bytes[24..28].copy_from_slice(&self.reserved_2[0].to_le_bytes());
+		bytes[28..32].copy_from_slice(&self.reserved_2[1].to_le_bytes());
 
 		bytes
 	}

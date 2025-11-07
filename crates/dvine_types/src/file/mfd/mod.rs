@@ -4,26 +4,143 @@
 //! used in the `D+VINE[LUV]` visual novel engine. MFD files contain animated mouse cursor
 //! frames with metadata including dimensions, hotspot offsets, and indexed pixel data.
 //!
-//! # File Structure
+//! # File Structure Overview
 //!
-//! The MFD file format consists of:
-//! - **Header (0x00-0x0F):** File metadata including frame count at offset 0x08
-//! - **Bitmap Data (0x10-0x33DB):** Raw pixel data for all frames
-//! - **Glyph Table (0x33DC+):** Frame metadata entries (12 bytes each)
+//! The MFD format is a proprietary binary format with a dynamic structure consisting of:
+//! - **Fixed-size header** (16 bytes) containing key offsets and counts
+//! - **Bitmap data region** starting at offset 0x10, containing raw indexed pixel data
+//! - **Metadata region** whose location is specified in the header, containing:
+//!   - Animation sequence start table (if animations present)
+//!   - Glyph table (frame dimension and offset metadata)
+//!   - Animation index table (frame index, duration pairs, and loop markers)
 //!
-//! Each glyph table entry contains:
-//! - Width (2 bytes, little-endian)
-//! - Height (2 bytes, little-endian)
-//! - X offset / hotspot (2 bytes, signed little-endian)
-//! - Y offset / hotspot (2 bytes, signed little-endian)
-//! - Bitmap offset (4 bytes, little-endian, relative to 0x10)
+//! ## Header Structure (16 bytes at offset 0x00)
 //!
-//! # Pixel Format
+//! ```text
+//! Offset  Size  Field                   Description
+//! ------  ----  ----------------------  ------------------------------------------
+//! 0x00    4     metadata_offset         Offset from BITMAP_DATA_START (0x10) to
+//!                                       the metadata region
+//! 0x04    4     animation_count         Number of animation sequences
+//! 0x08    4     frame_count             Total number of frames in the file
+//! 0x0C    4     anim_table_entry_count  Number of entries in animation index table
+//! ```
 //!
-//! Pixels are stored as indexed bytes:
-//! - `0`: Transparent
-//! - `1`: Outline color
-//! - Other values: Fill color
+//! All fields are little-endian u32 values.
+//!
+//! ## Dynamic Offset Calculation
+//!
+//! The file uses **dynamic offsets** computed from header fields:
+//!
+//! ```text
+//! metadata_region = BITMAP_DATA_START (0x10) + metadata_offset
+//! animation_seq_table = metadata_region
+//! glyph_table = animation_seq_table + (animation_count × 4)
+//! anim_index_table = glyph_table + (frame_count × 12)
+//! ```
+//!
+//! **Important:** Offsets are NOT hardcoded. Each file may have different bitmap sizes
+//! and thus different metadata region locations.
+//!
+//! ## Bitmap Data Region (starts at 0x10)
+//!
+//! Contains raw indexed pixel data for all frames, stored sequentially or with potential
+//! overlaps. Each frame's bitmap offset is stored in its glyph table entry as an offset
+//! **relative to `BITMAP_DATA_START` (0x10)**.
+//!
+//! Pixel size for each frame = `width × height` bytes (1 byte per pixel).
+//!
+//! ## Metadata Region Structure
+//!
+//! ### 1. Animation Sequence Start Table
+//!
+//! ```text
+//! Location: metadata_region
+//! Size:     animation_count × 4 bytes
+//! Format:   Array of u32 (little-endian)
+//! ```
+//!
+//! Each entry is a start index into the animation index table. For example, if
+//! `animation_sequences = [0, 11, 24]`, then:
+//! - Animation 0 starts at `anim_index_table[0]`
+//! - Animation 1 starts at `anim_index_table[11]`
+//! - Animation 2 starts at `anim_index_table[24]`
+//!
+//! ### 2. Glyph Table (Frame Metadata)
+//!
+//! ```text
+//! Location: glyph_table_offset (computed above)
+//! Size:     frame_count × 12 bytes
+//! Format:   Array of glyph entries
+//!
+//! Each glyph entry (12 bytes):
+//!   +0x00 (2 bytes): width (u16)
+//!   +0x02 (2 bytes): height (u16)
+//!   +0x04 (2 bytes): x_offset (i16) - hotspot X
+//!   +0x06 (2 bytes): y_offset (i16) - hotspot Y
+//!   +0x08 (4 bytes): bitmap_offset (u32) - offset from BITMAP_DATA_START (0x10)
+//! ```
+//!
+//! The `bitmap_offset` field points to where this frame's pixel data begins in the
+//! bitmap data region. Absolute file offset = `0x10 + bitmap_offset`.
+//!
+//! ### 3. Animation Index Table
+//!
+//! ```text
+//! Location: anim_index_table_offset (computed above)
+//! Size:     anim_table_entry_count × 8 bytes
+//! Format:   Array of animation entries
+//!
+//! Each animation entry (8 bytes):
+//!   +0x00 (4 bytes): frame_index (u32)
+//!   +0x04 (4 bytes): duration (u32) - in milliseconds or ticks
+//!
+//! Special value: frame_index = 0xFFFFFFFF indicates a loop marker
+//! ```
+//!
+//! Animation sequences reference entries in this table using start indices from the
+//! animation sequence start table. The sequence continues until either:
+//! - A loop marker (0xFFFFFFFF) is encountered
+//! - The next sequence's start index is reached
+//! - The end of the table is reached
+//!
+//! ## Pixel Format
+//!
+//! Pixels are stored as indexed bytes with the following mapping:
+//!
+//! ```text
+//! Index   Meaning       BMP Export Color
+//! -----   -----------   ----------------
+//! 0x00    Transparent   White (255, 255, 255)
+//! 0x01    Outline       Gray  (128, 128, 128)
+//! 0xFF    Fill          Black (0, 0, 0)
+//! ```
+//!
+//! **Note:** The fill color is `0xFF`, not `0x02`. This was verified through analysis
+//! of DXMSTEST.MFD and is critical for correct rendering.
+//!
+//! ## Example File: DXMSTEST.MFD
+//!
+//! ```text
+//! Header values:
+//!   metadata_offset = 0x33C0 (13,248 bytes from 0x10)
+//!   animation_count = 3
+//!   frame_count = 23
+//!   anim_table_entry_count = 26
+//!
+//! Computed offsets:
+//!   Bitmap data:     0x0010 - 0x33CF (13,248 bytes, 23 frames × 24×24)
+//!   Metadata region: 0x33D0
+//!   Anim seq table:  0x33D0 - 0x33DB (12 bytes, 3 sequences)
+//!   Glyph table:     0x33DC - 0x34EF (276 bytes, 23 frames × 12)
+//!   Anim idx table:  0x34F0 - 0x35BF (208 bytes, 26 entries × 8)
+//!   File size:       13,760 bytes (0x35C0)
+//!
+//! Animation sequences:
+//!   Sequence 0: entries [0..11)   (11 frames)
+//!   Sequence 1: entries [11..24)  (13 frames)
+//!   Sequence 2: entries [24..26)  (2 frames)
+//! ```
 //!
 //! # Usage Examples
 //!
@@ -108,27 +225,113 @@
 //! ```
 
 use crate::file::{DvFileError, FileType};
+use serde::{Deserialize, Serialize};
 
 pub mod frame;
 
 pub use frame::{DEFAULT_RGBA_PALETTE, Frame, FrameRowIterator};
 
-/// MFD file constants.
+/// MFD file format constants.
+///
+/// These constants define the structure sizes and offsets used by the original executable.
+/// While the file format is largely dynamic (offsets computed from header fields), these
+/// constants represent hardcoded structure sizes that remain fixed across all MFD files.
+///
+/// # Structure Size Constants
+///
+/// - `HEADER_SIZE`: 16 bytes - fixed header at file start
+/// - `ANIM_SEQ_ENTRY_SIZE`: 4 bytes - each animation sequence start index
+/// - `GLYPH_ENTRY_SIZE`: 12 bytes - each frame metadata entry
+/// - `ANIM_ENTRY_SIZE`: 8 bytes - each animation index table entry
+///
+/// # Fixed Offsets
+///
+/// - `BITMAP_DATA_START`: 0x10 - bitmap data always starts after header
+///
+/// # Dynamic Offsets (Computed at Runtime)
+///
+/// All other offsets must be computed from header fields:
+///
+/// ```text
+/// metadata_region = BITMAP_DATA_START + metadata_offset (from header +0x00)
+/// glyph_table = metadata_region + (animation_count × ANIM_SEQ_ENTRY_SIZE)
+/// anim_index_table = glyph_table + (frame_count × GLYPH_ENTRY_SIZE)
+/// ```
+///
+/// **Never hardcode absolute offsets like 0x33D0!** These vary per file.
+/// Only structure sizes and the bitmap start offset are hardcoded.
 pub mod constants {
-	/// Fixed offset where bitmap data starts (0x10)
+	/// Fixed offset where bitmap data starts (0x10) - hardcoded in original exe
 	pub const BITMAP_DATA_START: usize = 0x10;
 
-	/// Fixed offset where the glyph table starts (0x33DC)
-	pub const GLYPH_TABLE_OFFSET: usize = 0x33DC;
+	/// Size of the file header (hardcoded in original exe)
+	pub const HEADER_SIZE: usize = 16;
 
-	/// Size of each glyph table entry in bytes
+	/// Size of each animation sequence start table entry in bytes (hardcoded in original exe)
+	pub const ANIM_SEQ_ENTRY_SIZE: usize = 4;
+
+	/// Size of each glyph table entry in bytes (`width`, `height`, `x_offset`, `y_offset`, `bitmap_offset`)
+	/// Hardcoded in original exe
 	pub const GLYPH_ENTRY_SIZE: usize = 12;
 
-	/// Offset of frame count in the header
-	pub const FRAME_COUNT_OFFSET: usize = 0x08;
+	/// Size of each animation index table entry in bytes (`frame_index`, `duration`)
+	/// Hardcoded in original exe
+	pub const ANIM_ENTRY_SIZE: usize = 8;
 
-	/// Maximum bitmap data size (from `BITMAP_DATA_START` t`GLYPH_TABLE_OFFSET`)
-	pub const MAX_BITMAP_SIZE: usize = GLYPH_TABLE_OFFSET - BITMAP_DATA_START;
+	/// Header field offset: metadata region offset (+0x00) - dynamically read
+	pub const METADATA_OFFSET_FIELD: usize = 0x00;
+	/// Header field offset: animation sequence count (+0x04) - dynamically read
+	pub const ANIMATION_COUNT_FIELD: usize = 0x04;
+	/// Header field offset: frame count (+0x08) - dynamically read
+	pub const FRAME_COUNT_OFFSET: usize = 0x08;
+	/// Header field offset: animation table entry count (+0x0C) - dynamically read
+	pub const ANIM_TABLE_ENTRY_COUNT_FIELD: usize = 0x0C;
+
+	/// Loop marker value in animation index table
+	pub const LOOP_MARKER: u32 = 0xFFFFFFFF;
+}
+
+/// Animation index table entry for MFD files.
+///
+/// Each entry defines a frame index and its display duration in the animation sequence.
+/// A `frame_index` of `0xFFFFFFFF` (represented as `None`) indicates a loop marker,
+/// signaling the animation should restart from the sequence's start index.
+///
+/// # Structure (8 bytes)
+/// - `+0x00`: `frame_index` (u32) - Frame index or `0xFFFFFFFF` for loop marker
+/// - `+0x04`: `duration` (u32) - Display duration in ticks (game-dependent time unit)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnimationEntry {
+	/// Frame index to display, or `None` for loop marker (`0xFFFFFFFF`)
+	pub frame_index: Option<u32>,
+	/// Display duration in ticks (e.g., 4, 6, 8 ticks per frame in DXMSTEST.MFD)
+	pub duration: u32,
+}
+
+impl AnimationEntry {
+	/// Creates a new animation entry with a frame index and duration
+	pub fn new(frame_index: u32, duration: u32) -> Self {
+		Self {
+			frame_index: Some(frame_index),
+			duration,
+		}
+	}
+
+	/// Creates a loop marker entry (`frame_index` = `0xFFFFFFFF`)
+	///
+	/// # Arguments
+	/// * `duration` - Additional delay before looping (typically 0 for immediate loop)
+	pub fn loop_marker(duration: u32) -> Self {
+		Self {
+			frame_index: None,
+			duration,
+		}
+	}
+
+	/// Returns true if this is a loop marker entry
+	pub fn is_loop_marker(&self) -> bool {
+		self.frame_index.is_none()
+	}
 }
 
 /// MFD file structure, representing a complete mouse cursor animation file.
@@ -136,10 +339,60 @@ pub mod constants {
 /// This structure fully parses the MFD file on load and stores frames in memory.
 /// It does not retain the raw file data, making it more memory efficient for
 /// applications that need to modify frames.
+///
+/// # File Components
+/// - **Header**: 16-byte header with `metadata_offset`, `animation_count`, `frame_count`, and `anim_table_entry_count`
+/// - **Frames**: Vector of parsed frame data with pixel buffers
+/// - **Animation sequences**: Optional animation sequence start indices (3 entries typically)
+/// - **Animation index table**: Optional `frame_index` + `duration` pairs with loop markers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
 	/// All frames in the file (fully parsed)
 	frames: Vec<Frame>,
+	/// Animation sequence start indices (indexes into `animation_index_table`)
+	/// Typically 3 sequences for normal, busy, and special cursor states
+	animation_sequences: Option<Vec<u32>>,
+	/// Animation index table entries (`frame_index` + `duration` pairs)
+	/// Contains loop markers (`0xFFFFFFFF`) to indicate sequence boundaries
+	animation_index_table: Option<Vec<AnimationEntry>>,
+	/// File header (16 bytes, preserved for round-trip accuracy)
+	header: [u8; 16],
+}
+
+impl File {
+	/// Calculate metadata region offset dynamically from header
+	fn metadata_region_offset(&self) -> usize {
+		let metadata_offset = u32::from_le_bytes([
+			self.header[constants::METADATA_OFFSET_FIELD],
+			self.header[constants::METADATA_OFFSET_FIELD + 1],
+			self.header[constants::METADATA_OFFSET_FIELD + 2],
+			self.header[constants::METADATA_OFFSET_FIELD + 3],
+		]);
+		constants::BITMAP_DATA_START + metadata_offset as usize
+	}
+
+	/// Calculate glyph table offset dynamically from header
+	fn glyph_table_offset(&self) -> usize {
+		let animation_count = self.animation_count();
+		self.metadata_region_offset() + (animation_count as usize * constants::ANIM_SEQ_ENTRY_SIZE)
+	}
+
+	/// Calculate animation index table offset dynamically from header
+	#[allow(dead_code)]
+	fn anim_index_table_offset(&self) -> usize {
+		let frame_count = u32::from_le_bytes([
+			self.header[constants::FRAME_COUNT_OFFSET],
+			self.header[constants::FRAME_COUNT_OFFSET + 1],
+			self.header[constants::FRAME_COUNT_OFFSET + 2],
+			self.header[constants::FRAME_COUNT_OFFSET + 3],
+		]);
+		self.glyph_table_offset() + (frame_count as usize * constants::GLYPH_ENTRY_SIZE)
+	}
+
+	/// Calculate maximum bitmap size dynamically from header
+	fn max_bitmap_size(&self) -> usize {
+		self.metadata_region_offset() - constants::BITMAP_DATA_START
+	}
 }
 
 impl File {
@@ -147,6 +400,9 @@ impl File {
 	pub fn new() -> Self {
 		Self {
 			frames: Vec::new(),
+			animation_sequences: None,
+			animation_index_table: None,
+			header: [0u8; 16],
 		}
 	}
 
@@ -223,6 +479,81 @@ impl File {
 		self.frames.iter_mut()
 	}
 
+	/// Returns the animation sequence start indices if present.
+	///
+	/// Each value is an index into the `animation_index_table` indicating where
+	/// the sequence begins. Typically 3 sequences (normal, busy, special).
+	#[inline]
+	pub fn animation_sequences(&self) -> Option<&[u32]> {
+		self.animation_sequences.as_deref()
+	}
+
+	/// Sets the animation sequence start indices.
+	pub fn set_animation_sequences(&mut self, sequences: Option<Vec<u32>>) {
+		self.animation_sequences = sequences;
+	}
+
+	/// Returns the animation index table if present.
+	///
+	/// Contains `frame_index` + `duration` pairs with loop markers (`0xFFFFFFFF`).
+	#[inline]
+	pub fn animation_index_table(&self) -> Option<&[AnimationEntry]> {
+		self.animation_index_table.as_deref()
+	}
+
+	/// Sets the animation index table.
+	pub fn set_animation_index_table(&mut self, table: Option<Vec<AnimationEntry>>) {
+		self.animation_index_table = table;
+	}
+
+	/// Returns the animation count from the header.
+	///
+	/// This is stored at offset +0x04 in the header.
+	pub fn animation_count(&self) -> u32 {
+		u32::from_le_bytes([
+			self.header[constants::ANIMATION_COUNT_FIELD],
+			self.header[constants::ANIMATION_COUNT_FIELD + 1],
+			self.header[constants::ANIMATION_COUNT_FIELD + 2],
+			self.header[constants::ANIMATION_COUNT_FIELD + 3],
+		])
+	}
+
+	/// Returns the animation table entry count from the header.
+	///
+	/// This is stored at offset +0x0C in the header.
+	pub fn anim_table_entry_count(&self) -> u32 {
+		u32::from_le_bytes([
+			self.header[constants::ANIM_TABLE_ENTRY_COUNT_FIELD],
+			self.header[constants::ANIM_TABLE_ENTRY_COUNT_FIELD + 1],
+			self.header[constants::ANIM_TABLE_ENTRY_COUNT_FIELD + 2],
+			self.header[constants::ANIM_TABLE_ENTRY_COUNT_FIELD + 3],
+		])
+	}
+
+	/// Legacy compatibility: Returns `animation_index_table` for backward compatibility.
+	#[deprecated(since = "0.2.0", note = "Use animation_index_table() instead")]
+	#[inline]
+	pub fn animation_metadata(&self) -> Option<&[AnimationEntry]> {
+		self.animation_index_table.as_deref()
+	}
+
+	/// Legacy compatibility: Sets `animation_index_table` for backward compatibility.
+	#[deprecated(since = "0.2.0", note = "Use set_animation_index_table() instead")]
+	pub fn set_animation_metadata(&mut self, metadata: Option<Vec<AnimationEntry>>) {
+		self.animation_index_table = metadata;
+	}
+
+	/// Returns a reference to the file header.
+	#[inline]
+	pub fn header(&self) -> &[u8; 16] {
+		&self.header
+	}
+
+	/// Sets the file header.
+	pub fn set_header(&mut self, header: [u8; 16]) {
+		self.header = header;
+	}
+
 	/// Adds a new frame to the file.
 	///
 	/// # Arguments
@@ -236,13 +567,14 @@ impl File {
 		// Calculate total bitmap size with new frame
 		let current_size: usize = self.frames.iter().map(frame::Frame::pixel_count).sum();
 		let new_size = current_size + frame.pixel_count();
+		let max_size = self.max_bitmap_size();
 
-		if new_size > constants::MAX_BITMAP_SIZE {
+		if new_size > max_size {
 			return Err(DvFileError::FileTooLarge {
 				file_type: FileType::Mfd,
 				size: new_size,
 				blocks_needed: new_size,
-				blocks_available: constants::MAX_BITMAP_SIZE,
+				blocks_available: max_size,
 			});
 		}
 
@@ -297,13 +629,14 @@ impl File {
 			.map(|(_, f)| f.pixel_count())
 			.sum();
 		let new_size = current_size + frame.pixel_count();
+		let max_size = self.max_bitmap_size();
 
-		if new_size > constants::MAX_BITMAP_SIZE {
+		if new_size > max_size {
 			return Err(DvFileError::FileTooLarge {
 				file_type: FileType::Mfd,
 				size: new_size,
 				blocks_needed: new_size,
-				blocks_available: constants::MAX_BITMAP_SIZE,
+				blocks_available: max_size,
 			});
 		}
 
@@ -333,23 +666,33 @@ impl File {
 	pub fn to_bytes(&self) -> Result<Vec<u8>, DvFileError> {
 		// Calculate total bitmap size
 		let total_bitmap_size: usize = self.frames.iter().map(frame::Frame::pixel_count).sum();
+		let max_bitmap_size = self.max_bitmap_size();
 
-		if total_bitmap_size > constants::MAX_BITMAP_SIZE {
+		if total_bitmap_size > max_bitmap_size {
 			return Err(DvFileError::FileTooLarge {
 				file_type: FileType::Mfd,
 				size: total_bitmap_size,
 				blocks_needed: total_bitmap_size,
-				blocks_available: constants::MAX_BITMAP_SIZE,
+				blocks_available: max_bitmap_size,
 			});
 		}
 
-		// Calculate file size
-		let file_size =
-			constants::GLYPH_TABLE_OFFSET + self.frames.len() * constants::GLYPH_ENTRY_SIZE;
+		// Calculate file size including all components (dynamically)
+		let glyph_table_offset = self.glyph_table_offset();
+		let glyph_table_size = self.frames.len() * constants::GLYPH_ENTRY_SIZE;
+		let anim_table_size = self
+			.animation_index_table
+			.as_ref()
+			.map(|t| t.len() * constants::ANIM_ENTRY_SIZE)
+			.unwrap_or(0);
+
+		let file_size = glyph_table_offset + glyph_table_size + anim_table_size;
 		let mut data = vec![0u8; file_size];
 
-		// Write header
-		// Frame count at offset 0x08
+		// Write header (preserve original header bytes)
+		data[0..16].copy_from_slice(&self.header);
+
+		// Update frame count at offset 0x08
 		let frame_count = self.frames.len() as u32;
 		data[constants::FRAME_COUNT_OFFSET..constants::FRAME_COUNT_OFFSET + 4]
 			.copy_from_slice(&frame_count.to_le_bytes());
@@ -362,8 +705,8 @@ impl File {
 			let bitmap_end = bitmap_start + frame.pixel_count();
 			data[bitmap_start..bitmap_end].copy_from_slice(frame.pixels());
 
-			// Write glyph table entry
-			let glyph_offset = constants::GLYPH_TABLE_OFFSET + i * constants::GLYPH_ENTRY_SIZE;
+			// Write glyph table entry (dynamically calculated offset)
+			let glyph_offset = glyph_table_offset + i * constants::GLYPH_ENTRY_SIZE;
 			data[glyph_offset..glyph_offset + 2].copy_from_slice(&frame.width().to_le_bytes());
 			data[glyph_offset + 2..glyph_offset + 4].copy_from_slice(&frame.height().to_le_bytes());
 			data[glyph_offset + 4..glyph_offset + 6]
@@ -373,6 +716,26 @@ impl File {
 			data[glyph_offset + 8..glyph_offset + 12].copy_from_slice(&bitmap_offset.to_le_bytes());
 
 			bitmap_offset += frame.pixel_count() as u32;
+		}
+
+		// Write animation sequence start table (dynamically calculated offset)
+		if let Some(ref sequences) = self.animation_sequences {
+			let seq_offset = self.metadata_region_offset();
+			for (i, &start_index) in sequences.iter().enumerate() {
+				let offset = seq_offset + i * constants::ANIM_SEQ_ENTRY_SIZE;
+				data[offset..offset + 4].copy_from_slice(&start_index.to_le_bytes());
+			}
+		}
+
+		// Write animation index table after glyph table
+		if let Some(ref anim_table) = self.animation_index_table {
+			let anim_table_offset = glyph_table_offset + glyph_table_size;
+			for (i, entry) in anim_table.iter().enumerate() {
+				let offset = anim_table_offset + i * constants::ANIM_ENTRY_SIZE;
+				let frame_idx = entry.frame_index.unwrap_or(constants::LOOP_MARKER);
+				data[offset..offset + 4].copy_from_slice(&frame_idx.to_le_bytes());
+				data[offset + 4..offset + 8].copy_from_slice(&entry.duration.to_le_bytes());
+			}
 		}
 
 		Ok(data)
@@ -391,24 +754,32 @@ impl File {
 	/// - The glyph table offset is beyond the file size
 	/// - Frame entries are invalid
 	pub fn from_bytes(data: &[u8]) -> Result<Self, DvFileError> {
-		// Validate minimum file size (header + at least glyph table start)
-		if data.len() < constants::GLYPH_TABLE_OFFSET {
+		// Validate minimum file size (header)
+		if data.len() < constants::HEADER_SIZE {
 			return Err(DvFileError::insufficient_data(
 				FileType::Mfd,
-				constants::GLYPH_TABLE_OFFSET,
+				constants::HEADER_SIZE,
 				data.len(),
 			));
 		}
 
-		// Read frame count from offset 0x08
-		if data.len() < constants::FRAME_COUNT_OFFSET + 4 {
-			return Err(DvFileError::insufficient_data(
-				FileType::Mfd,
-				constants::FRAME_COUNT_OFFSET + 4,
-				data.len(),
-			));
-		}
+		// Preserve the full header (first 16 bytes)
+		let mut header = [0u8; 16];
+		header.copy_from_slice(&data[0..constants::HEADER_SIZE]);
 
+		// Read header fields dynamically
+		let metadata_offset = u32::from_le_bytes([
+			data[constants::METADATA_OFFSET_FIELD],
+			data[constants::METADATA_OFFSET_FIELD + 1],
+			data[constants::METADATA_OFFSET_FIELD + 2],
+			data[constants::METADATA_OFFSET_FIELD + 3],
+		]);
+		let animation_count = u32::from_le_bytes([
+			data[constants::ANIMATION_COUNT_FIELD],
+			data[constants::ANIMATION_COUNT_FIELD + 1],
+			data[constants::ANIMATION_COUNT_FIELD + 2],
+			data[constants::ANIMATION_COUNT_FIELD + 3],
+		]);
 		let frame_count = u32::from_le_bytes([
 			data[constants::FRAME_COUNT_OFFSET],
 			data[constants::FRAME_COUNT_OFFSET + 1],
@@ -416,10 +787,24 @@ impl File {
 			data[constants::FRAME_COUNT_OFFSET + 3],
 		]);
 
+		// Calculate offsets dynamically (as original exe does)
+		let metadata_region_offset = constants::BITMAP_DATA_START + metadata_offset as usize;
+		let glyph_table_offset =
+			metadata_region_offset + (animation_count as usize * constants::ANIM_SEQ_ENTRY_SIZE);
+		let anim_index_table_offset =
+			glyph_table_offset + (frame_count as usize * constants::GLYPH_ENTRY_SIZE);
+
+		// Validate file has enough data for glyph table
+		let glyph_table_end =
+			glyph_table_offset + (frame_count as usize * constants::GLYPH_ENTRY_SIZE);
+		if data.len() < glyph_table_end {
+			return Err(DvFileError::insufficient_data(FileType::Mfd, glyph_table_end, data.len()));
+		}
+
 		// Parse glyph table and extract frames
 		let mut frames = Vec::with_capacity(frame_count as usize);
 		for i in 0..frame_count as usize {
-			let glyph_offset = constants::GLYPH_TABLE_OFFSET + i * constants::GLYPH_ENTRY_SIZE;
+			let glyph_offset = glyph_table_offset + i * constants::GLYPH_ENTRY_SIZE;
 
 			// Validate we have enough data for this entry
 			if data.len() < glyph_offset + constants::GLYPH_ENTRY_SIZE {
@@ -461,8 +846,78 @@ impl File {
 			frames.push(Frame::new(width, height, x_offset, y_offset, pixels));
 		}
 
+		// Parse animation sequence start table (between metadata region and glyph table)
+		let animation_sequences = if data.len() >= glyph_table_offset && animation_count > 0 {
+			let seq_data = &data[metadata_region_offset..glyph_table_offset];
+			let expected_size = animation_count as usize * constants::ANIM_SEQ_ENTRY_SIZE;
+
+			if seq_data.len() >= expected_size {
+				let mut sequences = Vec::new();
+				for i in 0..animation_count as usize {
+					let offset = i * constants::ANIM_SEQ_ENTRY_SIZE;
+					let start_idx = u32::from_le_bytes([
+						seq_data[offset],
+						seq_data[offset + 1],
+						seq_data[offset + 2],
+						seq_data[offset + 3],
+					]);
+					sequences.push(start_idx);
+				}
+				Some(sequences)
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+
+		// Parse animation index table (after glyph table)
+		let animation_index_table = if data.len() > anim_index_table_offset {
+			let remaining_data = &data[anim_index_table_offset..];
+			if remaining_data.len() >= constants::ANIM_ENTRY_SIZE {
+				let mut anim_table = Vec::new();
+				let mut offset = 0;
+
+				while offset + constants::ANIM_ENTRY_SIZE <= remaining_data.len() {
+					let frame_idx = u32::from_le_bytes([
+						remaining_data[offset],
+						remaining_data[offset + 1],
+						remaining_data[offset + 2],
+						remaining_data[offset + 3],
+					]);
+					let duration = u32::from_le_bytes([
+						remaining_data[offset + 4],
+						remaining_data[offset + 5],
+						remaining_data[offset + 6],
+						remaining_data[offset + 7],
+					]);
+
+					if frame_idx == constants::LOOP_MARKER {
+						anim_table.push(AnimationEntry::loop_marker(duration));
+					} else {
+						anim_table.push(AnimationEntry::new(frame_idx, duration));
+					}
+
+					offset += constants::ANIM_ENTRY_SIZE;
+				}
+
+				if !anim_table.is_empty() {
+					Some(anim_table)
+				} else {
+					None
+				}
+			} else {
+				None
+			}
+		} else {
+			None
+		};
+
 		Ok(Self {
 			frames,
+			animation_sequences,
+			animation_index_table,
+			header,
 		})
 	}
 
@@ -542,6 +997,9 @@ impl<'a> IntoIterator for &'a mut File {
 #[derive(Debug, Clone, Default)]
 pub struct FileBuilder {
 	frames: Vec<Frame>,
+	animation_sequences: Option<Vec<u32>>,
+	animation_index_table: Option<Vec<AnimationEntry>>,
+	header: [u8; 16],
 }
 
 impl FileBuilder {
@@ -549,6 +1007,9 @@ impl FileBuilder {
 	pub fn new() -> Self {
 		Self {
 			frames: Vec::new(),
+			animation_sequences: None,
+			animation_index_table: None,
+			header: [0u8; 16],
 		}
 	}
 
@@ -566,12 +1027,15 @@ impl FileBuilder {
 		let current_size: usize = self.frames.iter().map(frame::Frame::pixel_count).sum();
 		let new_size = current_size + frame.pixel_count();
 
-		if new_size > constants::MAX_BITMAP_SIZE {
+		// Note: We can't validate against max_bitmap_size here because we need the header
+		// This will be validated when the file is saved via to_bytes()
+		let reasonable_max = 1024 * 1024; // 1MB
+		if new_size > reasonable_max {
 			return Err(DvFileError::FileTooLarge {
 				file_type: FileType::Mfd,
 				size: new_size,
 				blocks_needed: new_size,
-				blocks_available: constants::MAX_BITMAP_SIZE,
+				blocks_available: reasonable_max,
 			});
 		}
 
@@ -613,6 +1077,51 @@ impl FileBuilder {
 	/// Clears all frames from the builder.
 	pub fn clear(&mut self) {
 		self.frames.clear();
+		self.animation_sequences = None;
+		self.animation_index_table = None;
+	}
+
+	/// Sets the animation sequence start indices for the file.
+	///
+	/// # Arguments
+	/// * `sequences` - Vector of start indices (typically 3 entries for normal, busy, special)
+	pub fn animation_sequences(&mut self, sequences: Vec<u32>) -> &mut Self {
+		self.animation_sequences = Some(sequences);
+		self
+	}
+
+	/// Sets the animation index table for the file.
+	///
+	/// # Arguments
+	/// * `table` - Vector of `AnimationEntry` with frame indices and durations
+	pub fn animation_index_table(&mut self, table: Vec<AnimationEntry>) -> &mut Self {
+		self.animation_index_table = Some(table);
+		self
+	}
+
+	/// Legacy compatibility: Sets `animation_index_table`.
+	#[deprecated(since = "0.2.0", note = "Use animation_index_table() instead")]
+	pub fn animation_metadata(&mut self, metadata: Vec<AnimationEntry>) -> &mut Self {
+		self.animation_index_table = Some(metadata);
+		self
+	}
+
+	/// Clears the animation data.
+	pub fn clear_animation_data(&mut self) -> &mut Self {
+		self.animation_sequences = None;
+		self.animation_index_table = None;
+		self
+	}
+
+	/// Sets the file header.
+	pub fn header(&mut self, header: [u8; 16]) -> &mut Self {
+		self.header = header;
+		self
+	}
+
+	/// Gets a reference to the current header.
+	pub fn get_header(&self) -> &[u8; 16] {
+		&self.header
 	}
 
 	/// Builds the MFD file.
@@ -625,18 +1134,50 @@ impl FileBuilder {
 	pub fn build(self) -> Result<File, DvFileError> {
 		let total_size: usize = self.frames.iter().map(frame::Frame::pixel_count).sum();
 
-		if total_size > constants::MAX_BITMAP_SIZE {
+		// Prepare header with correct metadata_offset
+		let mut header = self.header;
+
+		// Calculate metadata_offset (offset from BITMAP_DATA_START to metadata region)
+		let metadata_offset = total_size as u32;
+		header[constants::METADATA_OFFSET_FIELD..constants::METADATA_OFFSET_FIELD + 4]
+			.copy_from_slice(&metadata_offset.to_le_bytes());
+
+		// Set animation_count
+		let animation_count = self.animation_sequences.as_ref().map(Vec::len).unwrap_or(0) as u32;
+		header[constants::ANIMATION_COUNT_FIELD..constants::ANIMATION_COUNT_FIELD + 4]
+			.copy_from_slice(&animation_count.to_le_bytes());
+
+		// Set frame_count
+		let frame_count = self.frames.len() as u32;
+		header[constants::FRAME_COUNT_OFFSET..constants::FRAME_COUNT_OFFSET + 4]
+			.copy_from_slice(&frame_count.to_le_bytes());
+
+		// Set anim_table_entry_count
+		let anim_table_entry_count =
+			self.animation_index_table.as_ref().map(Vec::len).unwrap_or(0) as u32;
+		header
+			[constants::ANIM_TABLE_ENTRY_COUNT_FIELD..constants::ANIM_TABLE_ENTRY_COUNT_FIELD + 4]
+			.copy_from_slice(&anim_table_entry_count.to_le_bytes());
+
+		let file = File {
+			frames: self.frames,
+			animation_sequences: self.animation_sequences,
+			animation_index_table: self.animation_index_table,
+			header,
+		};
+
+		// Now validate against the calculated max_bitmap_size
+		let max_bitmap_size = file.max_bitmap_size();
+		if total_size > max_bitmap_size {
 			return Err(DvFileError::FileTooLarge {
 				file_type: FileType::Mfd,
 				size: total_size,
 				blocks_needed: total_size,
-				blocks_available: constants::MAX_BITMAP_SIZE,
+				blocks_available: max_bitmap_size,
 			});
 		}
 
-		Ok(File {
-			frames: self.frames,
-		})
+		Ok(file)
 	}
 
 	/// Builds and saves the MFD file directly.
@@ -691,14 +1232,14 @@ mod tests {
 	fn test_builder_size_limit() {
 		let mut builder = FileBuilder::new();
 
-		// Try to add frames that exceed the limit
-		// MAX_BITMAP_SIZE = 13,260 bytes
-		let frame = Frame::blank(100, 100, 0, 0); // 10,000 pixels
+		// Try to add frames that exceed the reasonable limit (1MB in FileBuilder::add_frame)
+		// Create a large frame that when doubled would exceed 1MB
+		let frame = Frame::blank(800, 800, 0, 0); // 640,000 pixels
 
 		// First one should succeed
 		builder.add_frame(frame.clone()).unwrap();
 
-		// Adding another should fail (10,000 + 10,000 > 13,260)
+		// Adding another should fail (640,000 + 640,000 = 1,280,000 > 1,048,576)
 		let result = builder.add_frame(frame);
 		assert!(result.is_err());
 	}

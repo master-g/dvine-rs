@@ -72,6 +72,8 @@ dvine_internal = { path = "crates/dvine_internal" }
 env_logger.workspace = true
 hex.workspace = true
 log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 dvine_dylib = { path = "crates/dvine_dylib", optional = true }
@@ -102,12 +104,12 @@ name = "efc_example"
 path = "examples/efc_example/main.rs"
 
 [[example]]
-name = "mfd_modifier"
-path = "examples/mfd_example/main.rs"
-
-[[example]]
 name = "kg_utils"
 path = "examples/kg_utils/main.rs"
+
+[[example]]
+name = "mfd_utils"
+path = "examples/mfd_utils/main.rs"
 
 
 # bin

@@ -391,6 +391,8 @@ dependencies = [
  "hex",
  "image",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -414,6 +416,7 @@ version = "0.1.0"
 dependencies = [
  "encoding_rs",
  "hound",
+ "serde",
  "thiserror 2.0.17",
 ]
 

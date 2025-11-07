@@ -9,37 +9,8 @@
 //! cargo bench --manifest-path benches/Cargo.toml -- --profile-time=5
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use dvine_benches::{generate_test_kg_data, sizes};
 use dvine_types::file::kg::File;
 use std::{fs, hint::black_box};
-
-/// Benchmark KG decompression with synthetic test data
-fn bench_decompress_synthetic(c: &mut Criterion) {
-	let mut group = c.benchmark_group("kg_decompress_synthetic");
-
-	let test_cases = vec![
-		("64x64", sizes::TINY),
-		("256x256", sizes::SMALL),
-		("512x512", sizes::MEDIUM),
-		("1024x768", sizes::LARGE),
-		("1920x1080", sizes::XLARGE),
-	];
-
-	for (name, (width, height)) in test_cases {
-		let data = generate_test_kg_data(width, height);
-		let pixels = (width as u64) * (height as u64);
-
-		group.throughput(Throughput::Elements(pixels));
-		group.bench_with_input(BenchmarkId::new("decompress", name), &data, |b, data| {
-			b.iter(|| {
-				let result = File::from_reader(&mut black_box(data).as_slice());
-				black_box(result)
-			});
-		});
-	}
-
-	group.finish();
-}
 
 /// Benchmark KG decompression with real game files
 fn bench_decompress_real_files(c: &mut Criterion) {
@@ -61,8 +32,17 @@ fn bench_decompress_real_files(c: &mut Criterion) {
 			}
 		};
 
-		// 640x480 = 307200 pixels
-		group.throughput(Throughput::Elements(307200));
+		// Parse header to get actual dimensions
+		let header = match dvine_types::file::kg::Header::from_bytes(&data) {
+			Ok(h) => h,
+			Err(_) => {
+				eprintln!("Warning: Could not parse header for: {}", name);
+				continue;
+			}
+		};
+
+		let pixels = (header.width() as u64) * (header.height() as u64);
+		group.throughput(Throughput::Elements(pixels));
 		group.bench_with_input(BenchmarkId::new("decompress", name), &data, |b, data| {
 			b.iter(|| {
 				let result = File::from_reader(&mut black_box(data).as_slice());
@@ -79,7 +59,15 @@ fn bench_header_parsing(c: &mut Criterion) {
 	use dvine_types::file::kg::Header;
 
 	let mut group = c.benchmark_group("kg_header");
-	let data = generate_test_kg_data(1024, 768);
+
+	// Use real test file
+	let data = match fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/BLACK")) {
+		Ok(d) => d,
+		Err(_) => {
+			eprintln!("Warning: Could not find test file for header benchmark");
+			return;
+		}
+	};
 
 	group.bench_function("parse_header", |b| {
 		b.iter(|| {
@@ -94,7 +82,15 @@ fn bench_header_parsing(c: &mut Criterion) {
 /// Benchmark palette loading
 fn bench_palette_loading(c: &mut Criterion) {
 	let mut group = c.benchmark_group("kg_palette");
-	let data = generate_test_kg_data(1024, 768);
+
+	// Use real test file
+	let data = match fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/BLACK")) {
+		Ok(d) => d,
+		Err(_) => {
+			eprintln!("Warning: Could not find test file for palette benchmark");
+			return;
+		}
+	};
 
 	group.bench_function("load_palette", |b| {
 		b.iter(|| {
@@ -309,10 +305,24 @@ fn bench_copy_operations(c: &mut Criterion) {
 fn bench_realistic_workload(c: &mut Criterion) {
 	let mut group = c.benchmark_group("kg_realistic");
 
-	// Simulate a typical game asset resolution
-	let (width, height) = sizes::LARGE;
-	let data = generate_test_kg_data(width, height);
-	let pixels = (width as u64) * (height as u64);
+	// Use real game file
+	let data = match fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/VYADOY01")) {
+		Ok(d) => d,
+		Err(_) => {
+			eprintln!("Warning: Could not find VYADOY01 for realistic workload benchmark");
+			return;
+		}
+	};
+
+	let header = match dvine_types::file::kg::Header::from_bytes(&data) {
+		Ok(h) => h,
+		Err(_) => {
+			eprintln!("Warning: Could not parse header for realistic workload");
+			return;
+		}
+	};
+
+	let pixels = (header.width() as u64) * (header.height() as u64);
 
 	group.throughput(Throughput::Bytes(data.len() as u64));
 	group.sample_size(50); // Fewer samples for larger workload
@@ -328,14 +338,13 @@ fn bench_realistic_workload(c: &mut Criterion) {
 
 	// Print summary statistics
 	println!("\n=== Benchmark Summary ===");
-	println!("Image size: {}x{} ({} pixels)", width, height, pixels);
+	println!("Image size: {}x{} ({} pixels)", header.width(), header.height(), pixels);
 	println!("Compressed size: {} bytes", data.len());
 	println!("Expected output: {} bytes (RGB)", pixels * 3);
 }
 
 criterion_group!(
 	benches,
-	bench_decompress_synthetic,
 	bench_decompress_real_files,
 	bench_header_parsing,
 	bench_palette_loading,

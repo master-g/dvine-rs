@@ -15,19 +15,19 @@ mod constants {
 	pub const HEADER_SIZE: usize = 32;
 }
 
-// Opcode definitions
+// Opcode definitions for the KG decompression algorithm
 mod opcodes {
-	/// Lookup in the dictionary
+	/// Dictionary lookup: Read color index from bitstream or LRU cache
 	pub const OP_DICT_LOOKUP: u8 = 0;
-	/// Copy from the previous pixel
+	/// Copy from the previous pixel (left or up depending on position)
 	pub const OP_COPY_PREV_PIXEL: u8 = 2;
-	/// Copy from two pixels up
+	/// Copy from one line up (same horizontal position)
 	pub const OP_COPY_PREV_LINE: u8 = 12;
-	/// Copy from the pixel diagonally up-right
+	/// Copy from one line up and one pixel right (diagonal up-right)
 	pub const OP_COPY_DIAGONAL_1: u8 = 13;
-	/// Copy from the pixel diagonally up-left
+	/// Copy from one line up and one pixel left (diagonal up-left)
 	pub const OP_COPY_DIAGONAL_2: u8 = 14;
-	/// Copy raw double bytes per pixel
+	/// Copy from two pixels back (for double BPP)
 	pub const OP_COPY_DOUBLE_BPP: u8 = 15;
 }
 
@@ -39,7 +39,8 @@ pub enum Compression {
 	/// No compression
 	Unsupported = 0,
 
-	/// Image is encoding using RLE with a single pass per plane
+	/// Image is encoded using dictionary lookup with LRU cache and various copy operations
+	/// Uses 1 or 3 bytes per pixel depending on whether a palette is present
 	BPP3 = 1,
 }
 

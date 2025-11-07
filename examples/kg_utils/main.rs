@@ -11,10 +11,16 @@
 //! # Usage
 //!
 //! ```bash
-//! # Encode a BMP file to KG
+//! # Encode a BMP file to KG (auto output: input.kg)
+//! cargo run --example kg_utils encode input.bmp
+//!
+//! # Encode with custom output path
 //! cargo run --example kg_utils encode input.bmp output.kg
 //!
-//! # Decode a KG file to BMP
+//! # Decode a KG file to BMP (auto output: input.bmp)
+//! cargo run --example kg_utils decode input.kg
+//!
+//! # Decode with custom output path
 //! cargo run --example kg_utils decode input.kg output.bmp
 //!
 //! # Verify encoder/decoder correctness
@@ -45,9 +51,9 @@ enum Commands {
 		#[arg(value_name = "INPUT_BMP")]
 		input: PathBuf,
 
-		/// Output KG file path
+		/// Output KG file path (optional, defaults to input with .kg extension)
 		#[arg(value_name = "OUTPUT_KG")]
-		output: PathBuf,
+		output: Option<PathBuf>,
 
 		/// Flip image vertically (Y-axis) before encoding
 		#[arg(short, long)]
@@ -64,9 +70,9 @@ enum Commands {
 		#[arg(value_name = "INPUT_KG")]
 		input: PathBuf,
 
-		/// Output BMP file path
+		/// Output BMP file path (optional, defaults to input with .bmp extension)
 		#[arg(value_name = "OUTPUT_BMP")]
-		output: PathBuf,
+		output: Option<PathBuf>,
 
 		/// Flip image vertically (Y-axis) after decoding
 		#[arg(short, long)]
@@ -142,10 +148,12 @@ fn count_unique_colors(rgb_data: &[u8]) -> usize {
 /// Handle encode command
 fn handle_encode(
 	input: PathBuf,
-	output: PathBuf,
+	output: Option<PathBuf>,
 	flip: bool,
 	verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+	// Generate output path if not specified
+	let output = output.unwrap_or_else(|| input.with_extension("kg"));
 	if verbose {
 		println!("🔄 Encoding BMP to KG format");
 		println!("   Input:  {}", input.display());
@@ -217,10 +225,12 @@ fn handle_encode(
 /// Handle decode command
 fn handle_decode(
 	input: PathBuf,
-	output: PathBuf,
+	output: Option<PathBuf>,
 	flip: bool,
 	verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+	// Generate output path if not specified
+	let output = output.unwrap_or_else(|| input.with_extension("bmp"));
 	if verbose {
 		println!("🔄 Decoding KG to BMP format");
 		println!("   Input:  {}", input.display());

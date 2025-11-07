@@ -15,7 +15,7 @@
 ├── FGL.DSK # ❓ Foreground layer disk data
 ├── FGL.PFT # ✅
 ├── item.dat # 🚧 item data file, involves game logic
-├── KG.DSK # 🚧 image, cg, avatar disk data
+├── KG.DSK # ✅ image, cg, avatar disk data
 ├── KG.PFT # ✅
 ├── MPP.DSK # ❓
 ├── MPP.PFT # ✅
@@ -32,6 +32,6 @@
 ├── SPR.PFT # ✅ Sprite PFT file
 ├── startup.ini # ✅ main configuration file for the game
 ├── SYSTEM.FNT # ✅ system font file, Shift-JIS encoding
-├── THUMB.DSK # 🚧 CG thumbnail images, in KG format
+├── THUMB.DSK # ✅ CG thumbnail images, in KG format
 ├── THUMB.PFT # ✅ CG thumbnail disk table file
 └── track # ✅ background music files

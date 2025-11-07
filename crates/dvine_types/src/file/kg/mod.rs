@@ -1,7 +1,89 @@
 //! `.KG` file format support for `dvine-rs` project.
+//!
+//! This module provides both compression and decompression support for the KG image format,
+//! a proprietary format used in DirectDraw-based games from around 2000.
+//!
+//! # Features
+//!
+//! - **Decompression**: Full support for Type 1 (BPP3) compression
+//! - **Compression**: Efficient encoding with LRU cache and copy operations
+//! - **Palette Support**: 256-color indexed images with BGRA palette
+//!
+//! # Examples
+//!
+//! ## Loading and Decompressing a KG File
+//!
+//! ```no_run
+//! use dvine_types::file::kg::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load from file
+//! let kg_file = File::open("image.kg")?;
+//!
+//! // Access image properties
+//! println!("Width: {}, Height: {}",
+//!     kg_file.header().width(),
+//!     kg_file.header().height());
+//!
+//! // Get RGB pixel data
+//! let pixels = kg_file.pixels();
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Compressing RGB Data to KG Format
+//!
+//! ```no_run
+//! use dvine_types::file::kg::compress;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create RGB image data (width * height * 3 bytes)
+//! let width = 16;
+//! let height = 16;
+//! let mut rgb_data = vec![0u8; (width * height * 3) as usize];
+//!
+//! // Fill with some pattern (e.g., red gradient)
+//! for y in 0..height {
+//!     for x in 0..width {
+//!         let idx = ((y * width + x) * 3) as usize;
+//!         rgb_data[idx] = ((x * 255) / width) as u8;     // R
+//!         rgb_data[idx + 1] = 0;                          // G
+//!         rgb_data[idx + 2] = 0;                          // B
+//!     }
+//! }
+//!
+//! // Compress to KG format
+//! let compressed = compress(&rgb_data, width, height)?;
+//!
+//! // Save to file
+//! std::fs::write("output.kg", compressed)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Round-trip Conversion
+//!
+//! ```no_run
+//! use dvine_types::file::kg::File;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load, modify, and save
+//! let kg_file = File::open("input.kg")?;
+//! kg_file.save("output.kg")?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Limitations
+//!
+//! - Maximum 256 unique colors (8-bit indexed color)
+//! - Only Type 1 (BPP3) compression is currently supported
+//! - Images with more than 256 colors will fail to compress
 
 mod decode;
-mod encode;
+pub mod encode;
+
+pub use encode::{compress, compress_file};
 
 use std::{fmt::Display, io::Read};
 
@@ -345,5 +427,46 @@ impl File {
 		let mut data = Vec::new();
 		reader.read_to_end(&mut data)?;
 		decode::decompress(&data)
+	}
+
+	/// Saves the `.KG` file to the specified path
+	///
+	/// This compresses the pixel data and writes the complete KG file.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use dvine_types::file::kg::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let kg_file = File::open("input.kg")?;
+	/// kg_file.save("output.kg")?;
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<(), DvFileError> {
+		let compressed = compress_file(self)?;
+		std::fs::write(path, compressed)?;
+		Ok(())
+	}
+
+	/// Compresses the `.KG` file to bytes
+	///
+	/// This is useful when you need the compressed data without writing to a file.
+	///
+	/// # Example
+	///
+	/// ```no_run
+	/// use dvine_types::file::kg::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let kg_file = File::open("input.kg")?;
+	/// let compressed_data = kg_file.to_bytes()?;
+	/// // Use compressed_data...
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn to_bytes(&self) -> Result<Vec<u8>, DvFileError> {
+		compress_file(self)
 	}
 }

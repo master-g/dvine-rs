@@ -97,6 +97,14 @@ path = "examples/efc_example/main.rs"
 name = "mfd_modifier"
 path = "examples/mfd_example/main.rs"
 
+[[example]]
+name = "kg_encoder_test"
+path = "examples/kg_encoder_test/main.rs"
+
+[[example]]
+name = "kg_simple_example"
+path = "examples/kg_encoder_test/simple_example.rs"
+
 
 # bin
 [profile.release]

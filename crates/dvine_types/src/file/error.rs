@@ -209,6 +209,15 @@ pub enum DvFileError {
 		message: String,
 	},
 
+	/// Compression error (KG files)
+	#[error("{file_type} error: Compression failed: {message}")]
+	CompressionError {
+		/// File type that encountered the error
+		file_type: FileType,
+		/// Error message
+		message: String,
+	},
+
 	/// Entry not found
 	#[error("{file_type} error: Entry not found: {message}")]
 	EntryNotFound {
@@ -303,6 +312,10 @@ impl DvFileError {
 				file_type,
 				..
 			}
+			| Self::CompressionError {
+				file_type,
+				..
+			}
 			| Self::EntryNotFound {
 				file_type,
 				..
@@ -333,6 +346,7 @@ impl DvFileError {
 			Self::UnsupportedCompressionType { .. }
 				| Self::UnderflowError { .. }
 				| Self::DecompressionError { .. }
+				| Self::CompressionError { .. }
 		)
 	}
 

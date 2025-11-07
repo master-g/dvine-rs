@@ -19,6 +19,7 @@ fn bench_decompress_real_files(c: &mut Criterion) {
 	// Real game files - paths are relative to workspace root
 	let test_files = vec![
 		("BLACK", concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/BLACK")),
+		("BUHIN", concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/BUHIN")),
 		("VYADOY01", concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/VYADOY01")),
 	];
 

@@ -247,13 +247,14 @@ impl DecompressorState {
 		let cache_entry = &mut self.lru_cache[self.current_color as usize];
 
 		// Find position of new_color in cache, if it exists
-		let mut position = 8;
-		for i in 0..8 {
-			if cache_entry[i] == new_color {
-				position = i;
-				break;
-			}
-		}
+		let mut position = cache_entry.iter().position(|&color| color == new_color).unwrap_or(8);
+		// let mut position = 8;
+		// for i in 0..8 {
+		// 	if cache_entry[i] == new_color {
+		// 		position = i;
+		// 		break;
+		// 	}
+		// }
 
 		// If already at front, nothing to do
 		if position == 0 {

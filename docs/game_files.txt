@@ -1,23 +1,23 @@
 .
 ├── _inmm.dll # ✅ CD audio virtualization middleware
 ├── _inmm.ini # ✅ _inmm.dll configuration file
-├── ANM.DSK # ❓ Animation disk data
+├── ANM.DSK # 🚧 Animation disk data
 ├── ANM.PFT # ✅
 ├── AVI # ✅ opening movie in low resolution
 ├── bmp # ✅ screenshot images, will be cleanup every time the game is run
-├── CHA.DSK # ❓ Character disk data
+├── CHA.DSK # 🚧 Character disk data
 ├── CHA.PFT # ✅ Character PFT file
 ├── DV_DISC2.TXT # ✅ Disc 2 text file ? Unnecessary for running the game ?
 ├── dvflg1[23].dat # 🚧 save files
 ├── dvine_op.exe # ✅ opening movie player executable
 ├── Dvine.EFC # ✅ Sound effects
 ├── DXMSTEST.MFD # ✅ cursor frame sprite data (DirectX Multi/Mouse Test?, multi-frame-data?)
-├── FGL.DSK # ❓ Foreground layer disk data
+├── FGL.DSK # 🚧 Fighting graphics disk data
 ├── FGL.PFT # ✅
 ├── item.dat # 🚧 item data file, involves game logic
 ├── KG.DSK # ✅ image, cg, avatar disk data
 ├── KG.PFT # ✅
-├── MPP.DSK # ❓
+├── MPP.DSK # 🚧 Map file
 ├── MPP.PFT # ✅
 ├── op.avi # ✅ opening movie file
 ├── RUBI.FNT # ✅ font for furigana text

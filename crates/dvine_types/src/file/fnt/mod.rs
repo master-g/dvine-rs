@@ -85,6 +85,15 @@ pub mod constants {
 
 	/// Bitmap data offset in bytes
 	pub const BITMAP_DATA_OFFSET: usize = 0x7404;
+
+	/// Shift-JIS encoding transformation thresholds
+	pub const HIGH_RANGE_THRESHOLD: u16 = 0xE000;
+	/// Shift-JIS encoding transformation offsets
+	pub const HIGH_RANGE_OFFSET: u16 = 0x4000;
+	/// Shift-JIS encoding double byte transformation thresholds
+	pub const DOUBLE_BYTE_THRESHOLD: u16 = 0x8100;
+	/// Shift-JIS encoding double byte transformation offsets
+	pub const DOUBLE_BYTE_OFFSET: u16 = 0x8000;
 }
 
 /// Font size enumeration.
@@ -167,27 +176,19 @@ impl File {
 	/// This maps Shift-JIS codes into the offset table's index space through modulo arithmetic.
 	/// For example: 0x82A0 ('あ') + 0x8000 = 0x102A0, masked to 0x02A0.
 	fn code_to_index(code: u16) -> Option<usize> {
-		let mut index = code as usize;
+		let index = code
+			.wrapping_add(if code >= constants::HIGH_RANGE_THRESHOLD {
+				constants::HIGH_RANGE_OFFSET
+			} else {
+				0
+			})
+			.wrapping_add(if code >= constants::DOUBLE_BYTE_THRESHOLD {
+				constants::DOUBLE_BYTE_OFFSET
+			} else {
+				0
+			});
 
-		// Apply encoding transformations from original assembly code (sub_486790)
-		// These transformations use 16-bit wraparound to compress the Shift-JIS
-		// code space into the offset table's range
-		if code >= 0xE000 {
-			index = index.wrapping_add(0x4000);
-		}
-		if code >= 0x8100 {
-			index = index.wrapping_add(0x8000);
-		}
-
-		// Mask to 16 bits to handle wraparound (equivalent to assembly "and eax, 0FFFFh")
-		index &= 0xFFFF;
-
-		// Validate that index is within offset table range
-		if index < constants::OFFSET_TABLE_ENTRIES {
-			Some(index)
-		} else {
-			None
-		}
+		(index as usize).checked_sub(0).filter(|&idx| idx < constants::OFFSET_TABLE_ENTRIES)
 	}
 	/// Creates a new Font File instance with the specified font size.
 	pub fn new(font_size: FontSize) -> Self {

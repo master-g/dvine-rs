@@ -1,7 +1,7 @@
 .
 ├── _inmm.dll # ✅ CD audio virtualization middleware
 ├── _inmm.ini # ✅ _inmm.dll configuration file
-├── ANM.DSK # 🚧 Animation disk data
+├── ANM.DSK # ✅ Animation disk data
 ├── ANM.PFT # ✅
 ├── AVI # ✅ opening movie in low resolution
 ├── bmp # ✅ screenshot images, will be cleanup every time the game is run

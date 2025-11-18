@@ -2,6 +2,7 @@
 
 mod error;
 
+pub mod anm;
 pub mod dsk;
 pub mod efc;
 pub mod fnt;
@@ -19,6 +20,10 @@ pub const DSK_BLOCK_SIZE: usize = 0x0800;
 pub use error::{DvFileError, FileType};
 
 // Re-export main file types
+pub use anm::{
+	AnimationSequence as AnmAnimationSequence, File as AnmFile,
+	FrameDescriptor as AnmFrameDescriptor,
+};
 pub use dsk::File as DskFile;
 pub use efc::{
 	AdpcmDataHeader, DecodedSound, EffectInfo, File as EfcFile, FileBuilder as EfcFileBuilder,

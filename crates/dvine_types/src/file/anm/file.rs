@@ -155,6 +155,73 @@ impl File {
 		&mut self.header
 	}
 
+	/// Returns the sprite filename stored in the header.
+	///
+	/// The header contains a null-terminated ASCII string (max 31 bytes + null).
+	/// Returns an empty string if the header is all zeros or contains invalid UTF-8.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use dvine_types::file::anm::File;
+	///
+	/// let mut anm = File::new();
+	/// anm.set_spr_filename("test.spr").unwrap();
+	/// assert_eq!(anm.spr_filename(), "test.spr");
+	/// ```
+	pub fn spr_filename(&self) -> &str {
+		// Find null terminator or use full header length
+		let end = self.header.iter().position(|&b| b == 0).unwrap_or(self.header.len());
+
+		// Convert to string, defaulting to empty string if invalid UTF-8
+		std::str::from_utf8(&self.header[..end]).unwrap_or("")
+	}
+
+	/// Sets the sprite filename in the header.
+	///
+	/// The filename is stored as a null-terminated ASCII string in the 32-byte header.
+	/// The filename will be truncated if it exceeds 31 bytes (leaving room for null terminator).
+	///
+	/// # Arguments
+	///
+	/// * `filename` - The sprite filename (typically "FILENAME.spr", case-insensitive)
+	///
+	/// # Errors
+	///
+	/// Returns an error if the filename contains non-ASCII characters.
+	///
+	/// # Examples
+	///
+	/// ```
+	/// use dvine_types::file::anm::File;
+	///
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let mut anm = File::new();
+	/// anm.set_spr_filename("AGMAGIC.spr")?;
+	/// assert_eq!(anm.spr_filename(), "AGMAGIC.spr");
+	/// # Ok(())
+	/// # }
+	/// ```
+	pub fn set_spr_filename(&mut self, filename: &str) -> Result<(), DvFileError> {
+		// Validate ASCII
+		if !filename.is_ascii() {
+			return Err(DvFileError::BadEncoding {
+				file_type: FileType::Anm,
+				message: "SPR filename must be ASCII".to_string(),
+			});
+		}
+
+		// Clear header
+		self.header.fill(0);
+
+		// Copy filename bytes (truncate if too long, leaving room for null terminator)
+		let bytes = filename.as_bytes();
+		let len = bytes.len().min(constants::HEADER_SIZE - 1);
+		self.header[..len].copy_from_slice(&bytes[..len]);
+
+		Ok(())
+	}
+
 	/// Returns a reference to the index table.
 	///
 	/// The index table contains word offsets (multiply by 2 to get byte offsets).
@@ -528,5 +595,82 @@ impl Default for File {
 impl std::fmt::Display for File {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "ANM File ({} sequences)", self.sequences.len())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_spr_filename_empty_by_default() {
+		let file = File::new();
+		assert_eq!(file.spr_filename(), "");
+	}
+
+	#[test]
+	fn test_set_and_get_spr_filename() {
+		let mut file = File::new();
+		file.set_spr_filename("test.spr").unwrap();
+		assert_eq!(file.spr_filename(), "test.spr");
+	}
+
+	#[test]
+	fn test_set_spr_filename_case_insensitive() {
+		let mut file = File::new();
+		file.set_spr_filename("AGMAGIC.SPR").unwrap();
+		assert_eq!(file.spr_filename(), "AGMAGIC.SPR");
+
+		file.set_spr_filename("agmagic.spr").unwrap();
+		assert_eq!(file.spr_filename(), "agmagic.spr");
+	}
+
+	#[test]
+	fn test_set_spr_filename_truncates_long_names() {
+		let mut file = File::new();
+		let long_name = "a".repeat(50);
+		file.set_spr_filename(&long_name).unwrap();
+
+		// Should be truncated to 31 characters (leaving room for null terminator)
+		let result = file.spr_filename();
+		assert!(result.len() <= 31);
+		assert_eq!(result, "a".repeat(31));
+	}
+
+	#[test]
+	fn test_set_spr_filename_rejects_non_ascii() {
+		let mut file = File::new();
+		let result = file.set_spr_filename("测试.spr");
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_spr_filename_roundtrip() {
+		let mut file = File::new();
+		file.set_spr_filename("agmagic.SPR").unwrap();
+
+		let bytes = file.to_bytes();
+		let loaded = File::from_bytes(&bytes).unwrap();
+
+		assert_eq!(loaded.spr_filename(), "agmagic.SPR");
+	}
+
+	#[test]
+	fn test_spr_filename_in_header() {
+		let mut file = File::new();
+		file.set_spr_filename("test.spr").unwrap();
+
+		let header = file.header();
+
+		// Check that the filename is at the start of the header
+		assert_eq!(&header[0..8], b"test.spr");
+
+		// Check null terminator
+		assert_eq!(header[8], 0);
+
+		// Check padding
+		(9..constants::HEADER_SIZE).for_each(|i| {
+			assert_eq!(header[i], 0);
+		});
 	}
 }

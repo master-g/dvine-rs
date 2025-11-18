@@ -255,6 +255,7 @@ struct JsonSequence {
 /// Complete ANM file metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AnmMetadata {
+	spr_filename: Option<String>,
 	sequences: Vec<JsonSequence>,
 }
 
@@ -274,6 +275,13 @@ fn handle_info(
 	println!("╚════════════════════════════════════════╝");
 	println!();
 	println!("File: {}", input.display());
+
+	// Display SPR filename if present
+	let spr_filename = anm.spr_filename();
+	if !spr_filename.is_empty() {
+		println!("SPR File: {}", spr_filename);
+	}
+
 	println!("Total Slots: {}", anm.slot_count());
 	println!("Active Sequences: {}", anm.sequences().len());
 	println!();
@@ -411,7 +419,16 @@ fn handle_unpack(
 		});
 	}
 
+	// Get SPR filename from header
+	let spr_filename = anm.spr_filename();
+	let spr_filename = if spr_filename.is_empty() {
+		None
+	} else {
+		Some(spr_filename.to_string())
+	};
+
 	let metadata = AnmMetadata {
+		spr_filename,
 		sequences,
 	};
 
@@ -461,12 +478,21 @@ fn handle_pack(
 		println!("Found {} sequences", metadata.sequences.len());
 	}
 
-	// Create ANM file
+	// Create new ANM file
 	let mut anm = AnmFile::new();
 
-	for json_seq in metadata.sequences {
+	// Set SPR filename if present
+	if let Some(ref spr_filename) = metadata.spr_filename {
+		anm.set_spr_filename(spr_filename)?;
+		if verbose {
+			println!("Set SPR filename: {}", spr_filename);
+		}
+	}
+
+	// Add all sequences
+	for json_seq in &metadata.sequences {
 		let frames: Vec<FrameDescriptor> =
-			json_seq.frames.into_iter().map(FrameDescriptor::from).collect();
+			json_seq.frames.iter().map(|f| FrameDescriptor::from(f.clone())).collect();
 
 		let sequence = AnimationSequence::from_frames(frames);
 		anm.set_sequence(json_seq.slot, sequence)?;

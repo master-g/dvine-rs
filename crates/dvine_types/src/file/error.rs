@@ -227,6 +227,15 @@ pub enum DvFileError {
 		message: String,
 	},
 
+	/// Bad encoding
+	#[error("{file_type} error: Bad encoding: {message}")]
+	BadEncoding {
+		/// File type that encountered the error
+		file_type: FileType,
+		/// Error message
+		message: String,
+	},
+
 	/// hound library error
 	#[error(transparent)]
 	HoundError(#[from] hound::Error),
@@ -317,6 +326,10 @@ impl DvFileError {
 				..
 			}
 			| Self::EntryNotFound {
+				file_type,
+				..
+			}
+			| Self::BadEncoding {
 				file_type,
 				..
 			} => Some(*file_type),

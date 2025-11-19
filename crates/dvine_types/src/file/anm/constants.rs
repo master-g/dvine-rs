@@ -6,6 +6,18 @@
 /// Size of the file header (32 bytes)
 pub const HEADER_SIZE: usize = 32;
 
+/// Length of the SPR filename field inside the header (bytes 0x00-0x0B)
+pub const SPR_FILENAME_FIELD_LEN: usize = 12;
+
+/// Maximum number of visible characters allowed in the SPR filename
+pub const SPR_FILENAME_MAX_LEN: usize = SPR_FILENAME_FIELD_LEN - 1;
+
+/// Offset where the zero padding inside the header starts (bytes 0x0C-0x1F)
+pub const HEADER_PADDING_OFFSET: usize = 0x0C;
+
+/// Size of the padding block in the header
+pub const HEADER_PADDING_SIZE: usize = HEADER_SIZE - HEADER_PADDING_OFFSET;
+
 /// Size of the index table (512 bytes = 256 entries × 2 bytes)
 pub const INDEX_TABLE_SIZE: usize = 512;
 

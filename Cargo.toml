@@ -25,12 +25,7 @@ rust-version = "1.91.0"
 anyhow = "1.0.100"
 bytes = "1.11.0"
 chrono = { version = "0.4.42", features = ["serde"] }
-clap = { version = "4.5.52", features = [
-	"derive",
-	"env",
-	"unicode",
-	"wrap_help",
-] }
+clap = { version = "4.5.52", features = ["derive", "env", "unicode", "wrap_help"] }
 config = { version = "0.15.19", features = ["toml"] }
 encoding_rs = "0.8.35"
 env_logger = "0.11.8"
@@ -85,12 +80,8 @@ dynamic_linking = ["dep:dvine_dylib"]
 workspace = true
 
 [dev-dependencies]
-clap = { workspace = true, features = [
-	"derive",
-	"env",
-	"unicode",
-	"wrap_help",
-] }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive", "env", "unicode", "wrap_help"] }
 encoding_rs.workspace = true
 hex.workspace = true
 hound.workspace = true
@@ -98,6 +89,7 @@ image.workspace = true
 inquire = "0.7"
 rodio = "0.19"
 serde_json.workspace = true
+walkdir = "2.5"
 
 [[example]]
 name = "file-types"
@@ -134,7 +126,6 @@ path = "examples/dsk_utils/main.rs"
 [[example]]
 name = "anm_utils"
 path = "examples/anm_utils/main.rs"
-
 
 # bin
 [profile.release]

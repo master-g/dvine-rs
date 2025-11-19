@@ -603,6 +603,7 @@ dependencies = [
 name = "dvine-rs"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "dvine_dylib",
  "dvine_internal",
@@ -616,6 +617,7 @@ dependencies = [
  "rodio",
  "serde",
  "serde_json",
+ "walkdir",
 ]
 
 [[package]]

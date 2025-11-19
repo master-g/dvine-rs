@@ -87,6 +87,19 @@ impl FrameDescriptor {
 		}
 	}
 
+	/// Creates a frame using split duration components.
+	///
+	/// The low byte encodes the display time (ticks) and the high byte stores the
+	/// auxiliary parameter that the original engine uses for scaling, hit windows,
+	/// and other special behaviors.
+	pub fn frame_with_duration_components(frame_id: u16, ticks: u8, parameter: u8) -> Self {
+		let duration = u16::from(ticks) | (u16::from(parameter) << 8);
+		Self::Frame {
+			frame_id,
+			duration,
+		}
+	}
+
 	/// Creates an end marker that terminates the animation sequence.
 	pub fn end() -> Self {
 		Self::End
@@ -153,6 +166,31 @@ impl FrameDescriptor {
 	/// Returns `true` if this is a regular frame.
 	pub fn is_frame(&self) -> bool {
 		matches!(self, Self::Frame { .. })
+	}
+
+	/// Returns the low/high-byte duration components for regular frames.
+	pub fn duration_components(&self) -> Option<(u8, u8)> {
+		match self {
+			Self::Frame {
+				duration,
+				..
+			} => {
+				let ticks = (*duration & 0x00FF) as u8;
+				let parameter = (*duration >> 8) as u8;
+				Some((ticks, parameter))
+			}
+			_ => None,
+		}
+	}
+
+	/// Returns only the tick count (low byte) for regular frames.
+	pub fn duration_ticks(&self) -> Option<u8> {
+		self.duration_components().map(|(ticks, _)| ticks)
+	}
+
+	/// Returns the high-byte parameter for regular frames.
+	pub fn duration_parameter(&self) -> Option<u8> {
+		self.duration_components().map(|(_, param)| param)
 	}
 
 	/// Parses a frame descriptor from 4 bytes.

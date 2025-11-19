@@ -1,700 +1,510 @@
-//! ANM (Animation) CLI Utility
+//! ANM validation utility.
 //!
-//! A command-line tool for managing, extracting, and verifying animation sequence files.
-//!
-//! # Features
-//!
-//! - **unpack**: Extract animation sequences from an ANM file to JSON format
-//! - **pack**: Combine JSON animation data into an ANM file
-//! - **info**: Display detailed information about an ANM file
-//! - **verify**: Validate ANM encoder/decoder round-trip accuracy
-//!
-//! # Animation Sequence Format
-//!
-//! Each ANM file contains up to 256 animation slots. Each slot can contain:
-//! - Regular animation frames (sprite ID + duration)
-//! - Special markers (end, jump, sound, event)
-//!
-//! # JSON Format
-//!
-//! Animation data is stored in JSON with the following structure:
-//! ```json
-//! {
-//!   "sequences": [
-//!     {
-//!       "slot": 0,
-//!       "frames": [
-//!         {
-//!           "type": "Frame",
-//!           "frame_id": 0,
-//!           "duration": 10
-//!         },
-//!         {
-//!           "type": "Frame",
-//!           "frame_id": 1,
-//!           "duration": 10
-//!         },
-//!         {
-//!           "type": "Sound",
-//!           "sound_id": 5
-//!         },
-//!         {
-//!           "type": "Jump",
-//!           "target": 0
-//!         },
-//!         {
-//!           "type": "End"
-//!         }
-//!       ]
-//!     }
-//!   ]
-//! }
-//! ```
-//!
-//! # Usage
-//!
-//! ```bash
-//! # Show ANM file information
-//! cargo run --example anm_utils -- info AGMAGIC.anm
-//!
-//! # Unpack an ANM file to JSON
-//! cargo run --example anm_utils -- unpack AGMAGIC.anm
-//!
-//! # Unpack with custom output path
-//! cargo run --example anm_utils -- unpack AGMAGIC.anm -o animations.json
-//!
-//! # Pack JSON to ANM
-//! cargo run --example anm_utils -- pack animations.json output.anm
-//!
-//! # Verify encoder/decoder correctness
-//! cargo run --example anm_utils -- verify AGMAGIC.anm
-//!
-//! # Show detailed information with frame-by-frame breakdown
-//! cargo run --example anm_utils -- info AGMAGIC.anm --detailed
-//! ```
+//! Provides two subcommands:
+//! - `validate`: scan a directory (defaults to `bin/anm_extract`) and check every
+//!   `.ANM` file with the simulated parser and raw reader.
+//! - `inspect`: deep-dive into a single file and optionally focus on one slot.
 
-use clap::{Parser, Subcommand};
-use dvine_rs::prelude::file::anm::{
-	AnimationSequence, File as AnmFile, FrameDescriptor, ParseConfig,
+use std::{
+	fs,
+	path::{Path, PathBuf},
 };
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
+
+use anyhow::{Context, Result, bail};
+use clap::{Args, Parser, Subcommand};
+use dvine_rs::prelude::file::anm::{
+	AnimationSequence, File as AnmFile, ParseConfig, constants, sequence::SequenceParseStats,
+};
+use walkdir::WalkDir;
+
+fn main() -> Result<()> {
+	let cli = Cli::parse();
+	match cli.command {
+		Command::Validate(opts) => run_validate(opts),
+		Command::Inspect(opts) => run_inspect(opts),
+	}
+}
 
 #[derive(Parser)]
 #[command(name = "anm_utils")]
 #[command(author = "dvine-rs project")]
-#[command(version = "1.0")]
-#[command(about = "ANM animation utility - pack, unpack, verify, and manage ANM files", long_about = None)]
+#[command(version)]
+#[command(about = "Validate and inspect animation (.ANM) files", long_about = None)]
 struct Cli {
 	#[command(subcommand)]
-	command: Commands,
+	command: Command,
 }
 
 #[derive(Subcommand)]
-enum Commands {
-	/// Display information about an ANM file
-	Info {
-		/// Input ANM file path
-		#[arg(value_name = "INPUT_ANM")]
-		input: PathBuf,
-
-		/// Show detailed frame-by-frame information
-		#[arg(short, long)]
-		detailed: bool,
-
-		/// Show verbose output
-		#[arg(short, long)]
-		verbose: bool,
-	},
-
-	/// Unpack an ANM file to JSON format
-	Unpack {
-		/// Input ANM file path
-		#[arg(value_name = "INPUT_ANM")]
-		input: PathBuf,
-
-		/// Output JSON file path (optional, defaults to `input.json`)
-		#[arg(short, long, value_name = "OUTPUT_JSON")]
-		output: Option<PathBuf>,
-
-		/// Pretty-print JSON output
-		#[arg(short, long)]
-		pretty: bool,
-
-		/// Use lenient parsing for complex animations with many loops
-		#[arg(short, long)]
-		lenient: bool,
-
-		/// Use strict parsing with lower limits
-		#[arg(short, long)]
-		strict: bool,
-
-		/// Show verbose output
-		#[arg(short, long)]
-		verbose: bool,
-	},
-
-	/// Pack JSON animation data into an ANM file
-	Pack {
-		/// Input JSON file path
-		#[arg(value_name = "INPUT_JSON")]
-		input: PathBuf,
-
-		/// Output ANM file path
-		#[arg(value_name = "OUTPUT_ANM")]
-		output: PathBuf,
-
-		/// Show verbose output
-		#[arg(short, long)]
-		verbose: bool,
-	},
-
-	/// Verify ANM encoder/decoder round-trip accuracy
-	Verify {
-		/// Input ANM file path to verify
-		#[arg(value_name = "INPUT_ANM")]
-		input: PathBuf,
-
-		/// Show verbose output
-		#[arg(short, long)]
-		verbose: bool,
-
-		/// Save intermediate files for debugging
-		#[arg(short, long)]
-		save_intermediate: bool,
-
-		/// Use lenient parsing for complex animations
-		#[arg(short, long)]
-		lenient: bool,
-
-		/// Tolerate frame count differences (for looping animations)
-		#[arg(long)]
-		tolerate_loops: bool,
-	},
+enum Command {
+	/// Validate every .ANM file under a directory
+	Validate(ValidateArgs),
+	/// Inspect a single .ANM file and optionally focus on one slot
+	Inspect(InspectArgs),
 }
 
-/// Frame descriptor for JSON serialization
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum JsonFrameDescriptor {
-	Frame {
-		frame_id: u16,
-		duration: u16,
-	},
-	End,
-	Jump {
-		target: u16,
-	},
-	Sound {
-		sound_id: u16,
-	},
-	Event {
-		event_id: u16,
-	},
-}
+#[derive(Args)]
+struct ValidateArgs {
+	/// Directory containing extracted .ANM files
+	#[arg(short = 'd', long, value_name = "DIR", default_value = "bin/anm_extract")]
+	root: PathBuf,
 
-impl From<&FrameDescriptor> for JsonFrameDescriptor {
-	fn from(frame: &FrameDescriptor) -> Self {
-		match frame {
-			FrameDescriptor::Frame {
-				frame_id,
-				duration,
-			} => JsonFrameDescriptor::Frame {
-				frame_id: *frame_id,
-				duration: *duration,
-			},
-			FrameDescriptor::End => JsonFrameDescriptor::End,
-			FrameDescriptor::Jump {
-				target,
-			} => JsonFrameDescriptor::Jump {
-				target: *target,
-			},
-			FrameDescriptor::Sound {
-				sound_id,
-			} => JsonFrameDescriptor::Sound {
-				sound_id: *sound_id,
-			},
-			FrameDescriptor::Event {
-				event_id,
-			} => JsonFrameDescriptor::Event {
-				event_id: *event_id,
-			},
-		}
-	}
-}
+	/// Recurse into sub-directories while scanning
+	#[arg(short, long, default_value_t = false)]
+	recursive: bool,
 
-impl From<JsonFrameDescriptor> for FrameDescriptor {
-	fn from(json: JsonFrameDescriptor) -> Self {
-		match json {
-			JsonFrameDescriptor::Frame {
-				frame_id,
-				duration,
-			} => FrameDescriptor::frame(frame_id, duration),
-			JsonFrameDescriptor::End => FrameDescriptor::end(),
-			JsonFrameDescriptor::Jump {
-				target,
-			} => FrameDescriptor::jump(target),
-			JsonFrameDescriptor::Sound {
-				sound_id,
-			} => FrameDescriptor::sound(sound_id),
-			JsonFrameDescriptor::Event {
-				event_id,
-			} => FrameDescriptor::event(event_id),
-		}
-	}
-}
-
-/// Animation sequence for JSON serialization
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct JsonSequence {
-	slot: usize,
-	frames: Vec<JsonFrameDescriptor>,
-}
-
-/// Complete ANM file metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AnmMetadata {
-	spr_filename: Option<String>,
-	sequences: Vec<JsonSequence>,
-}
-
-fn handle_info(
-	input: PathBuf,
-	detailed: bool,
+	/// Print per-slot diagnostics even when clean
+	#[arg(short, long, default_value_t = false)]
 	verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-	if verbose {
-		println!("Reading ANM file: {}", input.display());
+
+	/// Exit with an error when warnings are encountered
+	#[arg(long, default_value_t = false)]
+	fail_on_warning: bool,
+
+	/// Maximum number of simulated parser iterations before assuming a loop
+	#[arg(long, value_name = "COUNT", default_value_t = 1000)]
+	max_iterations: usize,
+
+	/// Maximum visits per frame index before stopping
+	#[arg(long, value_name = "COUNT", default_value_t = 10)]
+	max_visits_per_index: usize,
+}
+
+#[derive(Args)]
+struct InspectArgs {
+	/// Path to a single .ANM file
+	#[arg(value_name = "FILE")]
+	file: PathBuf,
+
+	/// Only show diagnostics for the specified slot (0-255)
+	#[arg(short, long, value_name = "SLOT")]
+	slot: Option<usize>,
+
+	/// Show clean slots in addition to warnings/errors
+	#[arg(short, long, default_value_t = false)]
+	verbose: bool,
+
+	/// Maximum number of simulated parser iterations before assuming a loop
+	#[arg(long, value_name = "COUNT", default_value_t = 1000)]
+	max_iterations: usize,
+
+	/// Maximum visits per frame index before stopping
+	#[arg(long, value_name = "COUNT", default_value_t = 10)]
+	max_visits_per_index: usize,
+}
+
+fn run_validate(args: ValidateArgs) -> Result<()> {
+	if !args.root.exists() {
+		bail!("Root directory {} does not exist", args.root.display());
+	}
+	if !args.root.is_dir() {
+		bail!("{} is not a directory", args.root.display());
 	}
 
-	let anm = AnmFile::open(&input)?;
-
-	println!("╔════════════════════════════════════════╗");
-	println!("║       ANM File Information             ║");
-	println!("╚════════════════════════════════════════╝");
-	println!();
-	println!("File: {}", input.display());
-
-	// Display SPR filename if present
-	let spr_filename = anm.spr_filename();
-	if !spr_filename.is_empty() {
-		println!("SPR File: {}", spr_filename);
-	}
-
-	println!("Total Slots: {}", anm.slot_count());
-	println!("Active Sequences: {}", anm.sequences().len());
-	println!();
-
-	if anm.sequences().is_empty() {
-		println!("No animation sequences found.");
+	let config = build_config(args.max_iterations, args.max_visits_per_index)?;
+	let files = collect_anm_files(&args.root, args.recursive)?;
+	if files.is_empty() {
+		println!("No .ANM files found under {}", args.root.display());
 		return Ok(());
 	}
 
-	println!("Sequence Summary:");
-	println!("┌──────┬────────────┬──────────────────────────────────┐");
-	println!("│ Slot │ Frames     │ Content                          │");
-	println!("├──────┼────────────┼──────────────────────────────────┤");
+	let root_display = args.root.canonicalize().unwrap_or(args.root.clone());
+	let mut totals = ScanTotals::default();
 
-	for (slot, sequence) in anm.sequences() {
-		let frames = sequence.frames();
-		let frame_count = frames.len();
-
-		// Analyze sequence content
-		let regular_frames = frames.iter().filter(|f| f.is_frame()).count();
-		let has_jump = frames.iter().any(FrameDescriptor::is_jump);
-		let has_sound = frames.iter().any(FrameDescriptor::is_sound);
-		let has_event = frames.iter().any(FrameDescriptor::is_event);
-		let has_end = frames.iter().any(FrameDescriptor::is_end);
-
-		let mut content = Vec::new();
-		if regular_frames > 0 {
-			content.push(format!("{} frames", regular_frames));
+	for path in files {
+		match validate_file(&path, &config) {
+			Ok(report) => {
+				totals.update(&report);
+				print_file_report(&report, &path, Some(&root_display), args.verbose);
+			}
+			Err(err) => {
+				totals.record_failure();
+				println!("{} {} - {}", Severity::Error.icon(), path.display(), err);
+			}
 		}
-		if has_jump {
-			content.push("jump".to_string());
-		}
-		if has_sound {
-			content.push("sound".to_string());
-		}
-		if has_event {
-			content.push("event".to_string());
-		}
-		if has_end {
-			content.push("end".to_string());
-		}
-
-		let content_str = if content.is_empty() {
-			"empty".to_string()
-		} else {
-			content.join(", ")
-		};
-
-		println!("│ {:4} │ {:10} │ {:<32} │", slot, frame_count, content_str);
 	}
 
-	println!("└──────┴────────────┴──────────────────────────────────┘");
-	println!();
+	print_summary(&totals);
 
-	if detailed {
-		println!("Detailed Frame Information:");
-		println!();
-
-		for (slot, sequence) in anm.sequences() {
-			println!("Slot {}: {} frames", slot, sequence.frames().len());
-			println!("┌──────┬─────────────────────────────────────────────┐");
-			println!("│ #    │ Frame Descriptor                            │");
-			println!("├──────┼─────────────────────────────────────────────┤");
-
-			for (idx, frame) in sequence.frames().iter().enumerate() {
-				let desc = match frame {
-					FrameDescriptor::Frame {
-						frame_id,
-						duration,
-					} => format!("Frame(id={}, duration={})", frame_id, duration),
-					FrameDescriptor::End => "End Marker".to_string(),
-					FrameDescriptor::Jump {
-						target,
-					} => format!("Jump(target={})", target),
-					FrameDescriptor::Sound {
-						sound_id,
-					} => format!("Sound(id={})", sound_id),
-					FrameDescriptor::Event {
-						event_id,
-					} => format!("Event(id={})", event_id),
-				};
-				println!("│ {:4} │ {:<43} │", idx, desc);
-			}
-
-			println!("└──────┴─────────────────────────────────────────────┘");
-			println!();
-		}
+	if totals.files_error > 0 {
+		bail!("Validation finished with errors (see summary)");
+	}
+	if args.fail_on_warning && totals.files_warning > 0 {
+		bail!("Validation finished with warnings (see summary)");
 	}
 
 	Ok(())
 }
 
-fn handle_unpack(
-	input: PathBuf,
-	output: Option<PathBuf>,
-	pretty: bool,
-	lenient: bool,
-	strict: bool,
-	verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-	// Determine parse config
-	let parse_config = if lenient {
-		if verbose {
-			println!("Using lenient parsing mode");
+fn run_inspect(args: InspectArgs) -> Result<()> {
+	if let Some(slot) = args.slot {
+		if slot >= constants::ANIMATION_SLOT_COUNT {
+			bail!("Slot {} out of range (max {})", slot, constants::ANIMATION_SLOT_COUNT - 1);
 		}
-		ParseConfig::lenient()
-	} else if strict {
-		if verbose {
-			println!("Using strict parsing mode");
+	}
+
+	let config = build_config(args.max_iterations, args.max_visits_per_index)?;
+	let report = validate_file(&args.file, &config)?;
+
+	println!("File: {} (size: {} bytes)", args.file.display(), report.file_size);
+	println!(
+		"SPR filename: {}",
+		if report.spr_filename.is_empty() {
+			"<unset>"
+		} else {
+			report.spr_filename.as_str()
 		}
-		ParseConfig::strict()
-	} else {
-		ParseConfig::default()
+	);
+	println!(
+		"Slots analyzed: {} | warnings: {} | errors: {}",
+		report.active_slots(),
+		report.warning_slots(),
+		report.error_slots()
+	);
+	println!("Simulated frame count: {}", report.frames_total);
+
+	let mut slots: Vec<&SlotSummary> = match args.slot {
+		Some(idx) => report.slot_reports.iter().filter(|summary| summary.slot == idx).collect(),
+		None => report.slot_reports.iter().collect(),
 	};
 
-	if verbose {
-		println!("Reading ANM file: {}", input.display());
+	if slots.is_empty() {
+		println!("No matching slots found.");
+		return Ok(());
+	}
+
+	slots.sort_by_key(|summary| summary.slot);
+
+	for slot in slots {
+		if !args.verbose && args.slot.is_none() && slot.severity == Severity::Ok {
+			continue;
+		}
+		print_slot_details(slot, "  ", true);
+	}
+
+	Ok(())
+}
+
+fn build_config(max_iterations: usize, max_visits: usize) -> Result<ParseConfig> {
+	if max_iterations == 0 {
+		bail!("max-iterations must be greater than zero");
+	}
+	if max_visits == 0 {
+		bail!("max-visits-per-index must be greater than zero");
+	}
+	Ok(ParseConfig::new(max_iterations, max_visits))
+}
+
+fn collect_anm_files(root: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
+	let max_depth = if recursive {
+		usize::MAX
+	} else {
+		1
+	};
+	let mut files = Vec::new();
+
+	for entry in WalkDir::new(root).max_depth(max_depth).follow_links(false).into_iter() {
+		let entry = match entry {
+			Ok(entry) => entry,
+			Err(err) => {
+				println!("{}", err);
+				continue;
+			}
+		};
+
+		if entry.file_type().is_file() {
+			files.push(entry.into_path());
+		}
+	}
+
+	files.sort();
+	Ok(files)
+}
+
+fn validate_file(path: &Path, config: &ParseConfig) -> Result<FileReport> {
+	let bytes = fs::read(path).with_context(|| format!("Failed to read {}", path.display()))?;
+	let anm = AnmFile::from_bytes(&bytes)
+		.with_context(|| format!("Failed to parse header/index for {}", path.display()))?;
+
+	let mut slot_reports = Vec::new();
+	let mut severity = Severity::Ok;
+	let mut frames_total = 0usize;
+
+	for (slot, &word_offset) in anm.index_table().iter().enumerate() {
+		if word_offset == constants::NO_ANIMATION {
+			continue;
+		}
+
+		let byte_offset = constants::ANIMATION_DATA_OFFSET + (word_offset as usize * 2);
+		let mut summary = SlotSummary::new(slot, word_offset, byte_offset);
+
+		if byte_offset + constants::FRAME_DESCRIPTOR_SIZE > bytes.len() {
+			summary.add_error(format!(
+				"Slot offset 0x{byte_offset:05X} exceeds file length ({} bytes)",
+				bytes.len()
+			));
+		} else {
+			let slice = &bytes[byte_offset..];
+
+			match AnimationSequence::from_bytes_with_config(slice, config) {
+				Ok((sequence, stats)) => {
+					summary.frames = sequence.len();
+					summary.stats = Some(stats);
+					frames_total += sequence.len();
+
+					if stats.loop_detected {
+						summary.add_warning(format!(
+							"Loop guard triggered after visiting {} unique positions",
+							stats.unique_frame_positions
+						));
+					}
+
+					if !stats.terminated_by_end_marker {
+						summary.add_warning(
+							"Parser stopped without encountering an END marker".to_string(),
+						);
+					}
+				}
+				Err(err) => {
+					summary.add_error(format!("Simulated parser failed: {err}"));
+				}
+			}
+
+			match AnimationSequence::from_bytes_raw(slice) {
+				Ok((raw_sequence, raw_bytes)) => {
+					if summary.frames == 0 {
+						summary.frames = raw_sequence.len();
+					}
+					summary.raw_bytes = Some(raw_bytes);
+				}
+				Err(err) => {
+					summary.add_error(format!("Raw reader failed: {err}"));
+				}
+			}
+		}
+
+		severity.escalate(summary.severity);
+		slot_reports.push(summary);
+	}
+
+	Ok(FileReport {
+		severity,
+		slot_reports,
+		spr_filename: anm.spr_filename().to_string(),
+		file_size: bytes.len(),
+		frames_total,
+	})
+}
+
+fn print_file_report(report: &FileReport, path: &Path, root: Option<&Path>, verbose: bool) {
+	let rel = root
+		.and_then(|root| path.strip_prefix(root).ok())
+		.map(|p| p.display().to_string())
+		.unwrap_or_else(|| path.display().to_string());
+
+	println!(
+		"{} {:<50} | slots {:3} warn {:2} err {:2} | spr {}",
+		report.severity.icon(),
+		rel,
+		report.active_slots(),
+		report.warning_slots(),
+		report.error_slots(),
+		if report.spr_filename.is_empty() {
+			"<unset>"
+		} else {
+			report.spr_filename.as_str()
+		}
+	);
+
+	if verbose || report.severity != Severity::Ok {
+		for slot in &report.slot_reports {
+			if !verbose && slot.severity == Severity::Ok {
+				continue;
+			}
+			print_slot_details(slot, "    ", verbose);
+		}
+	}
+}
+
+fn print_slot_details(slot: &SlotSummary, indent: &str, include_clean_note: bool) {
+	println!(
+		"{indent}Slot {:03} (word 0x{:04X}, byte 0x{:05X}) - {:<4} - {} frames",
+		slot.slot,
+		slot.word_offset,
+		slot.byte_offset,
+		slot.severity.short_label(),
+		slot.frames
+	);
+
+	if let Some(stats) = slot.stats {
 		println!(
-			"Parse config: max_iterations={}, max_visits_per_index={}",
-			parse_config.max_iterations, parse_config.max_visits_per_index
+			"{indent}    stats: unique_positions={} bytes≈{} end={} loop={}",
+			stats.unique_frame_positions,
+			stats.bytes_consumed,
+			stats.terminated_by_end_marker,
+			stats.loop_detected
 		);
 	}
 
-	let anm = AnmFile::open(&input)?;
+	if let Some(raw_bytes) = slot.raw_bytes {
+		println!("{indent}    raw bytes consumed: {}", raw_bytes);
+	}
 
-	// Convert to JSON format
-	let mut sequences = Vec::new();
-	for (slot, sequence) in anm.sequences() {
-		let frames: Vec<JsonFrameDescriptor> =
-			sequence.frames().iter().map(JsonFrameDescriptor::from).collect();
+	if slot.issues.is_empty() {
+		if include_clean_note {
+			println!("{indent}    [OK] sequence ended cleanly");
+		}
+		return;
+	}
 
-		sequences.push(JsonSequence {
-			slot: *slot,
-			frames,
+	for issue in &slot.issues {
+		println!("{indent}    [{}] {}", issue.severity.short_label(), issue.message);
+	}
+}
+
+fn print_summary(totals: &ScanTotals) {
+	println!(
+		"\nSummary: files={} | ok={} warn={} err={} | slots={} warn={} err={} | frames={}",
+		totals.files_total,
+		totals.files_ok,
+		totals.files_warning,
+		totals.files_error,
+		totals.slots,
+		totals.warning_slots,
+		totals.error_slots,
+		totals.frames
+	);
+}
+
+#[derive(Default)]
+struct ScanTotals {
+	files_total: usize,
+	files_ok: usize,
+	files_warning: usize,
+	files_error: usize,
+	slots: usize,
+	warning_slots: usize,
+	error_slots: usize,
+	frames: usize,
+}
+
+impl ScanTotals {
+	fn update(&mut self, report: &FileReport) {
+		self.files_total += 1;
+		self.slots += report.active_slots();
+		self.warning_slots += report.warning_slots();
+		self.error_slots += report.error_slots();
+		self.frames += report.frames_total;
+
+		match report.severity {
+			Severity::Ok => self.files_ok += 1,
+			Severity::Warning => self.files_warning += 1,
+			Severity::Error => self.files_error += 1,
+		}
+	}
+
+	fn record_failure(&mut self) {
+		self.files_total += 1;
+		self.files_error += 1;
+	}
+}
+
+struct FileReport {
+	severity: Severity,
+	slot_reports: Vec<SlotSummary>,
+	spr_filename: String,
+	file_size: usize,
+	frames_total: usize,
+}
+
+impl FileReport {
+	fn active_slots(&self) -> usize {
+		self.slot_reports.len()
+	}
+
+	fn warning_slots(&self) -> usize {
+		self.slot_reports.iter().filter(|slot| slot.severity == Severity::Warning).count()
+	}
+
+	fn error_slots(&self) -> usize {
+		self.slot_reports.iter().filter(|slot| slot.severity == Severity::Error).count()
+	}
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Severity {
+	Ok,
+	Warning,
+	Error,
+}
+
+impl Severity {
+	fn escalate(&mut self, other: Severity) {
+		if other > *self {
+			*self = other;
+		}
+	}
+
+	fn icon(&self) -> &'static str {
+		match self {
+			Severity::Ok => "✅",
+			Severity::Warning => "⚠️ ",
+			Severity::Error => "❌",
+		}
+	}
+
+	fn short_label(&self) -> &'static str {
+		match self {
+			Severity::Ok => "OK",
+			Severity::Warning => "WARN",
+			Severity::Error => "ERR",
+		}
+	}
+}
+
+struct SlotSummary {
+	slot: usize,
+	word_offset: u16,
+	byte_offset: usize,
+	frames: usize,
+	stats: Option<SequenceParseStats>,
+	raw_bytes: Option<usize>,
+	severity: Severity,
+	issues: Vec<SlotIssue>,
+}
+
+impl SlotSummary {
+	fn new(slot: usize, word_offset: u16, byte_offset: usize) -> Self {
+		Self {
+			slot,
+			word_offset,
+			byte_offset,
+			frames: 0,
+			stats: None,
+			raw_bytes: None,
+			severity: Severity::Ok,
+			issues: Vec::new(),
+		}
+	}
+
+	fn add_warning(&mut self, message: String) {
+		self.severity.escalate(Severity::Warning);
+		self.issues.push(SlotIssue {
+			severity: Severity::Warning,
+			message,
 		});
 	}
 
-	// Get SPR filename from header
-	let spr_filename = anm.spr_filename();
-	let spr_filename = if spr_filename.is_empty() {
-		None
-	} else {
-		Some(spr_filename.to_string())
-	};
-
-	let metadata = AnmMetadata {
-		spr_filename,
-		sequences,
-	};
-
-	// Determine output path
-	let output_path = output.unwrap_or_else(|| {
-		let mut p = input.clone();
-		p.set_extension("json");
-		p
-	});
-
-	if verbose {
-		println!("Writing JSON to: {}", output_path.display());
-		println!("Sequences: {}", metadata.sequences.len());
+	fn add_error(&mut self, message: String) {
+		self.severity = Severity::Error;
+		self.issues.push(SlotIssue {
+			severity: Severity::Error,
+			message,
+		});
 	}
-
-	// Serialize to JSON
-	let json = if pretty {
-		serde_json::to_string_pretty(&metadata)?
-	} else {
-		serde_json::to_string(&metadata)?
-	};
-
-	fs::write(&output_path, json)?;
-
-	println!(
-		"✓ Successfully unpacked {} sequences to {}",
-		metadata.sequences.len(),
-		output_path.display()
-	);
-
-	Ok(())
 }
 
-fn handle_pack(
-	input: PathBuf,
-	output: PathBuf,
-	verbose: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-	if verbose {
-		println!("Reading JSON file: {}", input.display());
-	}
-
-	let json_data = fs::read_to_string(&input)?;
-	let metadata: AnmMetadata = serde_json::from_str(&json_data)?;
-
-	if verbose {
-		println!("Found {} sequences", metadata.sequences.len());
-	}
-
-	// Create new ANM file
-	let mut anm = AnmFile::new();
-
-	// Set SPR filename if present
-	if let Some(ref spr_filename) = metadata.spr_filename {
-		anm.set_spr_filename(spr_filename)?;
-		if verbose {
-			println!("Set SPR filename: {}", spr_filename);
-		}
-	}
-
-	// Add all sequences
-	for json_seq in &metadata.sequences {
-		let frames: Vec<FrameDescriptor> =
-			json_seq.frames.iter().map(|f| FrameDescriptor::from(f.clone())).collect();
-
-		let sequence = AnimationSequence::from_frames(frames);
-		anm.set_sequence(json_seq.slot, sequence)?;
-
-		if verbose {
-			println!("Added sequence to slot {}", json_seq.slot);
-		}
-	}
-
-	// Save ANM file
-	if verbose {
-		println!("Writing ANM file: {}", output.display());
-	}
-
-	anm.save(&output)?;
-
-	println!("✓ Successfully packed {} sequences to {}", anm.sequences().len(), output.display());
-
-	Ok(())
-}
-
-fn handle_verify(
-	input: PathBuf,
-	verbose: bool,
-	save_intermediate: bool,
-	lenient: bool,
-	tolerate_loops: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-	if verbose {
-		println!("Reading original ANM file: {}", input.display());
-		if lenient {
-			println!("Using lenient parsing mode");
-		}
-		if tolerate_loops {
-			println!("Tolerating frame count differences from loop detection");
-		}
-	}
-
-	// Load original
-	let original = AnmFile::open(&input)?;
-	let original_bytes = fs::read(&input)?;
-
-	if verbose {
-		println!("Original file size: {} bytes", original_bytes.len());
-		println!("Sequences: {}", original.sequences().len());
-	}
-
-	// Re-encode
-	let reencoded_bytes = original.to_bytes();
-
-	if verbose {
-		println!("Re-encoded file size: {} bytes", reencoded_bytes.len());
-	}
-
-	// Save intermediate if requested
-	if save_intermediate {
-		let intermediate_path = input.with_extension("reencoded.anm");
-		fs::write(&intermediate_path, &reencoded_bytes)?;
-		println!("Saved intermediate file: {}", intermediate_path.display());
-	}
-
-	// Parse re-encoded
-	let reparsed = AnmFile::from_bytes(&reencoded_bytes)?;
-
-	// Compare
-	println!();
-	println!("╔════════════════════════════════════════╗");
-	println!("║       Verification Results             ║");
-	println!("╚════════════════════════════════════════╝");
-	println!();
-
-	let mut all_match = true;
-
-	// Check sequence count
-	if original.sequences().len() != reparsed.sequences().len() {
-		println!("✗ Sequence count mismatch!");
-		println!("  Original: {}", original.sequences().len());
-		println!("  Reparsed: {}", reparsed.sequences().len());
-		all_match = false;
-	} else {
-		println!("✓ Sequence count: {}", original.sequences().len());
-	}
-
-	// Check each sequence
-	for (slot, orig_seq) in original.sequences() {
-		if let Some(repr_seq) = reparsed.get_sequence(*slot) {
-			if orig_seq.frames().len() != repr_seq.frames().len() {
-				// Check if either version has jump instructions (indicates loop)
-				let has_orig_jump = orig_seq
-					.frames()
-					.iter()
-					.any(dvine_rs::prelude::file::AnmFrameDescriptor::is_jump);
-				let has_repr_jump = repr_seq
-					.frames()
-					.iter()
-					.any(dvine_rs::prelude::file::AnmFrameDescriptor::is_jump);
-				let has_jumps = has_orig_jump || has_repr_jump;
-
-				if tolerate_loops && has_jumps {
-					// For looping animations, frame count differences are expected
-					println!(
-						"⚠ Slot {} frame count mismatch (expected for looping animations)",
-						slot
-					);
-					println!("  Original: {}", orig_seq.frames().len());
-					println!("  Reparsed: {}", repr_seq.frames().len());
-
-					if verbose {
-						println!("  Note: Sequence contains jump instructions (looping animation)");
-					}
-					// Don't mark as failure - this is expected for loops
-				} else {
-					println!("✗ Slot {} frame count mismatch!", slot);
-					println!("  Original: {}", orig_seq.frames().len());
-					println!("  Reparsed: {}", repr_seq.frames().len());
-
-					if has_jumps {
-						println!(
-							"  Note: Sequence has jump instructions. Use --tolerate-loops to accept this."
-						);
-					}
-
-					all_match = false;
-				}
-			} else if orig_seq != repr_seq {
-				println!("✗ Slot {} content mismatch!", slot);
-				all_match = false;
-
-				if verbose {
-					println!("  Comparing frames:");
-					for (idx, (orig_frame, repr_frame)) in
-						orig_seq.frames().iter().zip(repr_seq.frames().iter()).enumerate()
-					{
-						if orig_frame != repr_frame {
-							println!("    Frame {}: {} != {}", idx, orig_frame, repr_frame);
-						}
-					}
-				}
-			} else if verbose {
-				println!("✓ Slot {}: {} frames match", slot, orig_seq.frames().len());
-			}
-		} else {
-			println!("✗ Slot {} missing in reparsed file!", slot);
-			all_match = false;
-		}
-	}
-
-	println!();
-	if all_match {
-		println!("╔════════════════════════════════════════╗");
-		println!("║   ✓ Verification PASSED                ║");
-		println!("║   All sequences match perfectly!       ║");
-		println!("╚════════════════════════════════════════╝");
-	} else {
-		println!("╔════════════════════════════════════════╗");
-		println!("║   ✗ Verification FAILED                ║");
-		println!("║   Differences detected!                ║");
-		println!("╚════════════════════════════════════════╝");
-
-		if !tolerate_loops {
-			println!();
-			println!("Note: This file may contain looping animations with jump instructions.");
-			println!("      Frame count differences are expected for such animations.");
-			println!("      Try running with --tolerate-loops to skip loop-related differences.");
-		}
-
-		return Err("Verification failed".into());
-	}
-
-	Ok(())
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let cli = Cli::parse();
-
-	match cli.command {
-		Commands::Info {
-			input,
-			detailed,
-			verbose,
-		} => handle_info(input, detailed, verbose)?,
-		Commands::Unpack {
-			input,
-			output,
-			pretty,
-			lenient,
-			strict,
-			verbose,
-		} => handle_unpack(input, output, pretty, lenient, strict, verbose)?,
-		Commands::Pack {
-			input,
-			output,
-			verbose,
-		} => handle_pack(input, output, verbose)?,
-		Commands::Verify {
-			input,
-			verbose,
-			save_intermediate,
-			lenient,
-			tolerate_loops,
-		} => handle_verify(input, verbose, save_intermediate, lenient, tolerate_loops)?,
-	}
-
-	Ok(())
+struct SlotIssue {
+	severity: Severity,
+	message: String,
 }

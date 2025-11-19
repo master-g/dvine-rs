@@ -205,9 +205,13 @@
 //!
 //! // Use lenient parsing for complex animations with many loops
 //! let config = ParseConfig::lenient();
-//! let (sequence, bytes_read) = AnimationSequence::from_bytes_with_config(&data[0x220..], &config)?;
+//! let (sequence, stats) = AnimationSequence::from_bytes_with_config(&data[0x220..], &config)?;
 //!
-//! println!("Parsed {} frames, read {} bytes", sequence.len(), bytes_read);
+//! println!(
+//!     "Parsed {} frames, visited {} positions",
+//!     sequence.len(),
+//!     stats.unique_frame_positions
+//! );
 //! # Ok(())
 //! # }
 //! ```

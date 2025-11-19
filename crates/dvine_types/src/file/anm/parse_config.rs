@@ -20,9 +20,9 @@
 /// # Presets
 ///
 /// Three presets are available for common use cases:
-/// - `default()`: Balanced limits (1000 iterations, 10 visits/index)
-/// - `lenient()`: Higher limits for complex looping animations (5000, 50)
-/// - `strict()`: Lower limits for simple files (500, 5)
+/// - `default()`: Balanced limits (5000 iterations, 128 visits/index)
+/// - `lenient()`: Higher limits for complex looping animations (10000, 512)
+/// - `strict()`: Lower limits for simple files (1000, 32)
 ///
 /// # Examples
 ///
@@ -49,8 +49,8 @@ pub struct ParseConfig {
 impl Default for ParseConfig {
 	fn default() -> Self {
 		Self {
-			max_iterations: 1000,
-			max_visits_per_index: 10,
+			max_iterations: 5000,
+			max_visits_per_index: 128,
 		}
 	}
 }
@@ -71,12 +71,12 @@ impl ParseConfig {
 	/// Create a lenient configuration with higher limits.
 	///
 	/// Suitable for complex animations with many loops or intricate jump patterns.
-	/// - `max_iterations`: 5000
-	/// - `max_visits_per_index`: 50
+	/// - `max_iterations`: 10000
+	/// - `max_visits_per_index`: 512
 	pub fn lenient() -> Self {
 		Self {
-			max_iterations: 5000,
-			max_visits_per_index: 50,
+			max_iterations: 10000,
+			max_visits_per_index: 512,
 		}
 	}
 
@@ -84,12 +84,12 @@ impl ParseConfig {
 	///
 	/// Suitable for simple animations or when you want faster parsing with
 	/// early termination of complex loops.
-	/// - `max_iterations`: 500
-	/// - `max_visits_per_index`: 5
+	/// - `max_iterations`: 1000
+	/// - `max_visits_per_index`: 32
 	pub fn strict() -> Self {
 		Self {
-			max_iterations: 500,
-			max_visits_per_index: 5,
+			max_iterations: 1000,
+			max_visits_per_index: 32,
 		}
 	}
 }

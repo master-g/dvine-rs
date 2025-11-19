@@ -47,7 +47,7 @@
 //!
 //! Each animation sequence consists of:
 //! 1. A series of frame descriptors (4 bytes each)
-//! 2. An end marker (0xFFFF)
+//! 2. Control markers such as Hold (0xFFFF) and Jump (0xFFFE)
 //! 3. Optional padding (0x0000)
 //!
 //! ### Frame Descriptor (4 bytes)
@@ -61,7 +61,7 @@
 //!
 //! ### Special Frame ID Values
 //!
-//! - `0xFFFF`: End marker - terminates the animation sequence
+//! - `0xFFFF`: Hold marker - reuses the previous frame until the slot's data window is exhausted
 //! - `0xFFFE`: Jump marker - changes `frame_index` to the target (enables loops)
 //! - `0xFFFD`: Sound effect trigger
 //! - `0xFFFC`: Event marker
@@ -74,7 +74,7 @@
 //! - Starts at `frame_index` = 0 for each animation slot
 //! - Increments `frame_index` after processing normal frames
 //! - When encountering Jump (0xFFFE), sets `frame_index` to the jump target
-//! - When encountering End (0xFFFF), stops parsing
+//! - When encountering Hold (0xFFFF), reuses the previous frame and keeps iterating until the slot's data window ends
 //! - Includes loop detection to prevent infinite loops
 //!
 //! This approach correctly handles:
@@ -92,7 +92,7 @@
 //!   Slot 0: 0x0000 → Animation at 0x220
 //! Animation Data: 0x0220+
 //!   0x0220: 0x0000 0x0001  (Frame 0, duration 1)
-//!   0x0224: 0xFFFF 0x0000  (End marker)
+//!   0x0224: 0xFFFF 0x0000  (Hold marker)
 //! ```
 //!
 //! ### AGMAGIC.anm (Complex Example with Jumps)
@@ -138,8 +138,8 @@
 //!             FrameDescriptor::Frame { frame_id, duration } => {
 //!                 println!("  Frame {}: ID={}, Duration={}", i, frame_id, duration);
 //!             }
-//!             FrameDescriptor::End => {
-//!                 println!("  Frame {}: END", i);
+//!             FrameDescriptor::Hold => {
+//!                 println!("  Frame {}: HOLD", i);
 //!             }
 //!             _ => {}
 //!         }
@@ -162,7 +162,7 @@
 //! sequence.add_frame(FrameDescriptor::frame(0, 10));
 //! sequence.add_frame(FrameDescriptor::frame(1, 10));
 //! sequence.add_frame(FrameDescriptor::frame(2, 10));
-//! sequence.add_end_marker();
+//! sequence.add_hold_marker();
 //!
 //! // Add to slot 0
 //! anm.set_sequence(0, sequence)?;
@@ -187,7 +187,7 @@
 //! sequence.add_frame(FrameDescriptor::frame(1, 10));
 //! sequence.add_frame(FrameDescriptor::frame(2, 10));
 //! sequence.add_frame(FrameDescriptor::jump(0)); // Jump back to frame 0
-//! sequence.add_end_marker();
+//! sequence.add_hold_marker();
 //!
 //! anm.set_sequence(5, sequence)?;
 //! anm.save("looping.anm")?;
@@ -238,7 +238,7 @@ pub mod parse_config;
 pub mod sequence;
 
 // Re-exports for convenience
-pub use self::file::File;
+pub use self::file::{File, SlotDataWindow, compute_slot_windows};
 pub use self::frame::FrameDescriptor;
 pub use self::parse_config::ParseConfig;
 pub use self::sequence::AnimationSequence;

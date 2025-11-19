@@ -14,16 +14,16 @@ pub struct SequenceParseStats {
 	pub bytes_consumed: usize,
 	/// Number of unique frame positions that were evaluated.
 	pub unique_frame_positions: usize,
-	/// Whether the parser encountered an explicit end marker (0xFFFF).
-	pub terminated_by_end_marker: bool,
+	/// Whether parsing stopped because the slot's data window was exhausted.
+	pub exhausted_data_window: bool,
 	/// Whether parsing stopped because the loop-detection guard tripped.
 	pub loop_detected: bool,
 }
 
 impl SequenceParseStats {
-	/// Returns true when parsing ended cleanly on an end marker with no loop detection.
+	/// Returns true when parsing ended without tripping the loop guard.
 	pub fn ended_cleanly(&self) -> bool {
-		self.terminated_by_end_marker && !self.loop_detected
+		!self.loop_detected
 	}
 }
 
@@ -31,7 +31,7 @@ impl SequenceParseStats {
 ///
 /// An animation sequence is a series of frame descriptors that define an animation.
 /// It can contain regular frames, jump instructions (for loops), sound triggers,
-/// event markers, and must typically end with an End marker.
+/// event markers, and may include Hold markers that keep the previous frame active.
 ///
 /// # State Machine Parsing
 ///
@@ -40,7 +40,7 @@ impl SequenceParseStats {
 /// - Starts at `frame_index` = 0
 /// - Increments for normal frames
 /// - Jumps to target for Jump (0xFFFE) instructions
-/// - Stops at End (0xFFFF) marker
+/// - Reuses the previous frame when encountering Hold (0xFFFF)
 /// - Includes loop detection to prevent infinite loops
 ///
 /// # Examples
@@ -52,10 +52,10 @@ impl SequenceParseStats {
 /// let mut seq = AnimationSequence::new();
 /// seq.add_frame(FrameDescriptor::frame(0, 10));
 /// seq.add_frame(FrameDescriptor::frame(1, 10));
-/// seq.add_end_marker();
+/// seq.add_hold_marker();
 ///
 /// assert_eq!(seq.len(), 3);
-/// assert!(seq.has_end_marker());
+/// assert!(seq.has_hold_marker());
 /// ```
 ///
 /// # Looping Animations
@@ -68,7 +68,7 @@ impl SequenceParseStats {
 /// seq.add_frame(FrameDescriptor::frame(0, 10));
 /// seq.add_frame(FrameDescriptor::frame(1, 10));
 /// seq.add_frame(FrameDescriptor::jump(0)); // Jump back to start
-/// seq.add_end_marker();
+/// seq.add_hold_marker();
 ///
 /// // When parsed, this will detect the loop and stop gracefully
 /// ```
@@ -108,7 +108,7 @@ impl AnimationSequence {
 	/// let frames = vec![
 	///     FrameDescriptor::frame(0, 10),
 	///     FrameDescriptor::frame(1, 10),
-	///     FrameDescriptor::end(),
+	///     FrameDescriptor::hold(),
 	/// ];
 	/// let seq = AnimationSequence::from_frames(frames);
 	/// assert_eq!(seq.len(), 3);
@@ -148,7 +148,7 @@ impl AnimationSequence {
 		self.frames.push(frame);
 	}
 
-	/// Adds an end marker to the sequence.
+	/// Adds a hold marker to the sequence.
 	///
 	/// # Examples
 	///
@@ -156,11 +156,11 @@ impl AnimationSequence {
 	/// use dvine_types::file::anm::AnimationSequence;
 	///
 	/// let mut seq = AnimationSequence::new();
-	/// seq.add_end_marker();
-	/// assert!(seq.has_end_marker());
+	/// seq.add_hold_marker();
+	/// assert!(seq.has_hold_marker());
 	/// ```
-	pub fn add_end_marker(&mut self) {
-		self.frames.push(FrameDescriptor::end());
+	pub fn add_hold_marker(&mut self) {
+		self.frames.push(FrameDescriptor::hold());
 	}
 
 	/// Returns the number of frames in the sequence (including markers).
@@ -173,9 +173,9 @@ impl AnimationSequence {
 		self.frames.is_empty()
 	}
 
-	/// Returns true if the sequence ends with an end marker.
-	pub fn has_end_marker(&self) -> bool {
-		self.frames.last().is_some_and(FrameDescriptor::is_end)
+	/// Returns true if the sequence ends with a hold marker.
+	pub fn has_hold_marker(&self) -> bool {
+		self.frames.last().is_some_and(FrameDescriptor::is_hold)
 	}
 
 	/// Calculates the total byte size of this sequence when serialized.
@@ -199,7 +199,7 @@ impl AnimationSequence {
 	/// Parse an animation sequence from a byte slice using default configuration.
 	///
 	/// This is a convenience wrapper around [`from_bytes_with_config`] using
-	/// default parsing limits (1000 iterations, 10 visits per index).
+	/// default parsing limits (5000 iterations, 128 visits per index).
 	///
 	/// # Arguments
 	///
@@ -223,7 +223,7 @@ impl AnimationSequence {
 	///
 	/// let data = vec![
 	///     0x01, 0x00, 0x0A, 0x00,  // Frame(id=1, duration=10)
-	///     0xFF, 0xFF, 0x00, 0x00,  // End
+	///     0xFF, 0xFF, 0x00, 0x00,  // Hold previous frame
 	/// ];
 	///
 	/// let (seq, stats) = AnimationSequence::from_bytes(&data)?;
@@ -240,7 +240,7 @@ impl AnimationSequence {
 	/// Parses an animation sequence from bytes in raw mode (without simulating jumps).
 	///
 	/// This method reads frame descriptors sequentially from the byte stream without
-	/// executing jump instructions. It stops when it encounters an End marker or runs
+	/// executing jump instructions. It stops when it encounters a Hold marker or runs
 	/// out of data. This is useful for editing tools that need to preserve the original
 	/// structure of the animation data, including jump targets.
 	///
@@ -267,7 +267,7 @@ impl AnimationSequence {
 	/// let mut data = Vec::new();
 	/// data.extend_from_slice(&FrameDescriptor::frame(0, 10).to_bytes());
 	/// data.extend_from_slice(&FrameDescriptor::jump(0).to_bytes());
-	/// data.extend_from_slice(&FrameDescriptor::end().to_bytes());
+	/// data.extend_from_slice(&FrameDescriptor::hold().to_bytes());
 	///
 	/// let (seq, bytes_read) = AnimationSequence::from_bytes_raw(&data)?;
 	/// // In raw mode, this returns exactly 3 frames (not expanded loop)
@@ -281,20 +281,22 @@ impl AnimationSequence {
 
 		loop {
 			if offset + constants::FRAME_DESCRIPTOR_SIZE > data.len() {
-				return Err(DvFileError::insufficient_data(
-					FileType::Anm,
-					offset + constants::FRAME_DESCRIPTOR_SIZE,
-					data.len(),
-				));
+				if frames.is_empty() {
+					return Err(DvFileError::insufficient_data(
+						FileType::Anm,
+						offset + constants::FRAME_DESCRIPTOR_SIZE,
+						data.len(),
+					));
+				}
+				break;
 			}
 
 			let frame = FrameDescriptor::from_bytes(&data[offset..])?;
-			let is_end = frame.is_end();
 			frames.push(frame);
 			offset += constants::FRAME_DESCRIPTOR_SIZE;
 
-			// Stop at End marker
-			if is_end {
+			// Stop when encountering a hold marker (mirrors in-game authoring practice)
+			if frames.last().is_some_and(FrameDescriptor::is_hold) {
 				break;
 			}
 		}
@@ -314,7 +316,7 @@ impl AnimationSequence {
 	/// - Reads frame descriptors at `data[frame_index * 4..]`
 	/// - Increments `frame_index` for normal frames
 	/// - Sets `frame_index` to the target for Jump (0xFFFE) instructions
-	/// - Stops when encountering End (0xFFFF) marker
+	/// - Treats Hold (0xFFFF) instructions as "repeat previous frame"
 	/// - Includes loop detection to prevent infinite loops
 	///
 	/// This approach correctly handles:
@@ -362,8 +364,9 @@ impl AnimationSequence {
 		let mut iterations = 0;
 		let mut visit_counts = std::collections::HashMap::new();
 		let mut visited_positions = std::collections::HashSet::new();
-		let mut terminated_by_end_marker = false;
 		let mut loop_detected = false;
+		let mut exhausted_data_window = false;
+		let mut max_byte_offset = 0usize;
 
 		loop {
 			iterations += 1;
@@ -385,20 +388,25 @@ impl AnimationSequence {
 
 			let offset = frame_index * constants::FRAME_DESCRIPTOR_SIZE;
 			if offset + constants::FRAME_DESCRIPTOR_SIZE > data.len() {
-				return Err(DvFileError::insufficient_data(
-					FileType::Anm,
-					offset + constants::FRAME_DESCRIPTOR_SIZE,
-					data.len(),
-				));
+				if frames.is_empty() {
+					return Err(DvFileError::insufficient_data(
+						FileType::Anm,
+						offset + constants::FRAME_DESCRIPTOR_SIZE,
+						data.len(),
+					));
+				}
+				exhausted_data_window = true;
+				break;
 			}
+
+			max_byte_offset = max_byte_offset.max(offset + constants::FRAME_DESCRIPTOR_SIZE);
 
 			visited_positions.insert(frame_index);
 
 			let frame = FrameDescriptor::from_bytes(&data[offset..])?;
 
 			match frame {
-				FrameDescriptor::End => {
-					terminated_by_end_marker = true;
+				FrameDescriptor::Hold => {
 					frames.push(frame);
 					break;
 				}
@@ -417,9 +425,9 @@ impl AnimationSequence {
 		}
 
 		let stats = SequenceParseStats {
-			bytes_consumed: visited_positions.len() * constants::FRAME_DESCRIPTOR_SIZE,
+			bytes_consumed: max_byte_offset.min(data.len()),
 			unique_frame_positions: visited_positions.len(),
-			terminated_by_end_marker,
+			exhausted_data_window,
 			loop_detected,
 		};
 
@@ -458,7 +466,7 @@ mod tests {
 		let data = serialize_frames(&[
 			FrameDescriptor::frame(1, 5),
 			FrameDescriptor::frame_with_duration_components(2, 3, 1),
-			FrameDescriptor::end(),
+			FrameDescriptor::hold(),
 		]);
 
 		let (sequence, stats) = AnimationSequence::from_bytes(&data).expect("sequence parses");
@@ -477,7 +485,7 @@ mod tests {
 			AnimationSequence::from_bytes_with_config(&data, &config).expect("sequence parses");
 
 		assert!(stats.loop_detected, "loop guard should trigger");
-		assert!(!stats.terminated_by_end_marker);
+		assert!(!stats.exhausted_data_window);
 		assert_eq!(stats.unique_frame_positions, 2);
 		assert_eq!(stats.bytes_consumed, 2 * constants::FRAME_DESCRIPTOR_SIZE);
 		assert!(!stats.ended_cleanly());

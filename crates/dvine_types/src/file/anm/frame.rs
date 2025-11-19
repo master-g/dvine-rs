@@ -12,7 +12,7 @@ use super::constants;
 ///
 /// Each frame descriptor is 4 bytes (u16 id + u16 parameter) and can be one of:
 /// - **Frame**: Regular animation frame with sprite ID and duration
-/// - **End**: Marks the end of the animation sequence (0xFFFF)
+/// - **Hold**: Reuses the previous frame and extends its duration (~100 ticks, 0xFFFF)
 /// - **Jump**: Changes the `frame_index` to target, enabling loops (0xFFFE)
 /// - **Sound**: Triggers a sound effect (0xFFFD)
 /// - **Event**: Marks a special game event (0xFFFC)
@@ -22,7 +22,7 @@ use super::constants;
 /// The parser simulates the original game engine's animation player:
 /// - `Frame`: Display sprite, increment `frame_index`
 /// - `Jump`: Set `frame_index` = target (enables loops)
-/// - `End`: Stop parsing
+/// - `Hold`: Reuse the previous frame and keep the state active
 /// - `Sound`/`Event`: Trigger action, increment `frame_index`
 ///
 /// # Examples
@@ -38,9 +38,9 @@ use super::constants;
 /// let jump = FrameDescriptor::jump(0);
 /// assert!(jump.is_jump());
 ///
-/// // Create an end marker
-/// let end = FrameDescriptor::end();
-/// assert!(end.is_end());
+/// // Create a hold marker
+/// let hold = FrameDescriptor::hold();
+/// assert!(hold.is_hold());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameDescriptor {
@@ -52,8 +52,8 @@ pub enum FrameDescriptor {
 		duration: u16,
 	},
 
-	/// End marker - terminates the animation sequence
-	End,
+	/// Hold marker - replays the previous frame for an extended duration
+	Hold,
 
 	/// Jump instruction - sets `frame_index` to target (enables loops)
 	Jump {
@@ -100,9 +100,9 @@ impl FrameDescriptor {
 		}
 	}
 
-	/// Creates an end marker that terminates the animation sequence.
-	pub fn end() -> Self {
-		Self::End
+	/// Creates a hold marker that reuses the previous frame.
+	pub fn hold() -> Self {
+		Self::Hold
 	}
 
 	/// Creates a jump instruction that changes the `frame_index`.
@@ -143,9 +143,9 @@ impl FrameDescriptor {
 		}
 	}
 
-	/// Returns `true` if this is an end marker.
-	pub fn is_end(&self) -> bool {
-		matches!(self, Self::End)
+	/// Returns `true` if this is a hold marker.
+	pub fn is_hold(&self) -> bool {
+		matches!(self, Self::Hold)
 	}
 
 	/// Returns `true` if this is a jump instruction.
@@ -216,7 +216,7 @@ impl FrameDescriptor {
 		let param = u16::from_le_bytes([data[2], data[3]]);
 
 		let descriptor = match frame_id {
-			constants::END_MARKER => Self::End,
+			constants::HOLD_MARKER => Self::Hold,
 			constants::JUMP_MARKER => Self::Jump {
 				target: param,
 			},
@@ -245,7 +245,7 @@ impl FrameDescriptor {
 				frame_id,
 				duration,
 			} => (*frame_id, *duration),
-			Self::End => (constants::END_MARKER, 0),
+			Self::Hold => (constants::HOLD_MARKER, 0),
 			Self::Jump {
 				target,
 			} => (constants::JUMP_MARKER, *target),
@@ -271,7 +271,7 @@ impl std::fmt::Display for FrameDescriptor {
 				frame_id,
 				duration,
 			} => write!(f, "Frame(id={}, dur={})", frame_id, duration),
-			Self::End => write!(f, "End"),
+			Self::Hold => write!(f, "Hold"),
 			Self::Jump {
 				target,
 			} => write!(f, "Jump(→{})", target),

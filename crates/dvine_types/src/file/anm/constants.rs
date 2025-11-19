@@ -33,8 +33,8 @@ pub const ANIMATION_DATA_OFFSET: usize = 0x220;
 /// Size of each frame descriptor in bytes (4 bytes)
 pub const FRAME_DESCRIPTOR_SIZE: usize = 4;
 
-/// End marker value (0xFFFF) - terminates animation sequence
-pub const END_MARKER: u16 = 0xFFFF;
+/// Hold marker value (0xFFFF) - reuses previous frame for 100 ticks
+pub const HOLD_MARKER: u16 = 0xFFFF;
 
 /// Jump marker value (0xFFFE) - changes `frame_index` to target
 pub const JUMP_MARKER: u16 = 0xFFFE;

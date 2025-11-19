@@ -9,6 +9,70 @@ use crate::file::{DvFileError, FileType};
 
 use super::{constants, sequence::AnimationSequence};
 
+/// Byte range occupied by a single animation slot's data payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotDataWindow {
+	/// Absolute offset within the ANM file where the slot's data starts.
+	pub start: usize,
+	/// Absolute offset (exclusive) where the slot's data ends.
+	pub end: usize,
+}
+
+impl SlotDataWindow {
+	/// Length of the byte window.
+	pub fn len(&self) -> usize {
+		self.end.saturating_sub(self.start)
+	}
+
+	/// Returns `true` when the window has zero length.
+	pub fn is_empty(&self) -> bool {
+		self.len() == 0
+	}
+}
+
+/// Computes byte windows for each slot based on the index table and file length.
+pub fn compute_slot_windows(
+	index_table: &[u16; constants::ANIMATION_SLOT_COUNT],
+	file_len: usize,
+) -> [Option<SlotDataWindow>; constants::ANIMATION_SLOT_COUNT] {
+	let mut windows = [None; constants::ANIMATION_SLOT_COUNT];
+	let mut entries: Vec<(usize, usize)> = index_table
+		.iter()
+		.enumerate()
+		.filter_map(|(slot, &word_offset)| {
+			if word_offset == constants::NO_ANIMATION {
+				return None;
+			}
+
+			let start = constants::ANIMATION_DATA_OFFSET + (word_offset as usize * 2);
+			if start >= file_len {
+				return None;
+			}
+
+			Some((slot, start))
+		})
+		.collect();
+
+	entries.sort_by_key(|&(_, start)| start);
+
+	for i in 0..entries.len() {
+		let (slot, start) = entries[i];
+		let mut end = file_len;
+		for &(_, next_start) in entries.iter().skip(i + 1) {
+			if next_start > start {
+				end = next_start;
+				break;
+			}
+		}
+		windows[slot] = Some(SlotDataWindow {
+			start,
+			end: end.min(file_len),
+		});
+	}
+
+	windows
+}
+
 /// ANM file structure containing animation sequences.
 ///
 /// An ANM file consists of:
@@ -64,7 +128,7 @@ use super::{constants, sequence::AnimationSequence};
 /// let mut seq = AnimationSequence::new();
 /// seq.add_frame(FrameDescriptor::frame(0, 10));
 /// seq.add_frame(FrameDescriptor::frame(1, 10));
-/// seq.add_end_marker();
+/// seq.add_hold_marker();
 ///
 /// // Add to file
 /// anm.set_sequence(5, seq)?;
@@ -378,7 +442,7 @@ impl File {
 	///
 	/// let mut seq = AnimationSequence::new();
 	/// seq.add_frame(FrameDescriptor::frame(0, 10));
-	/// seq.add_end_marker();
+	/// seq.add_hold_marker();
 	///
 	/// anm.set_sequence(5, seq)?;
 	/// assert!(anm.get_sequence(5).is_some());
@@ -469,7 +533,7 @@ impl File {
 	///
 	/// let mut seq = AnimationSequence::new();
 	/// seq.add_frame(FrameDescriptor::frame(0, 10));
-	/// seq.add_end_marker();
+	/// seq.add_hold_marker();
 	/// anm.set_sequence(0, seq)?;
 	///
 	/// anm.save("output.anm")?;
@@ -565,6 +629,7 @@ impl File {
 		// This is LEGAL and intentional - used for space optimization or animation variants.
 		// We parse each slot independently, even if offsets overlap.
 		let mut sequences = Vec::new();
+		let slot_windows = compute_slot_windows(&index_table, data.len());
 
 		for (slot, &word_offset_value) in index_table.iter().enumerate() {
 			// 0xFFFF means no animation in this slot
@@ -572,19 +637,14 @@ impl File {
 				continue;
 			}
 
-			// Convert WORD offset to byte offset
-			// Index table stores WORD offsets, so multiply by 2 to get byte offset
-			let byte_offset = word_offset_value as usize * 2;
-			let data_offset = constants::ANIMATION_DATA_OFFSET + byte_offset;
-
-			if data_offset >= data.len() {
-				continue; // Invalid offset, skip
-			}
+			let Some(window) = slot_windows[slot] else {
+				continue;
+			};
 
 			// Parse sequence for this slot independently
 			// Even if another slot has the same offset, we parse it separately
 			// because the slot might start at a different position in shared data
-			match AnimationSequence::from_bytes(&data[data_offset..]) {
+			match AnimationSequence::from_bytes(&data[window.start..window.end]) {
 				Ok((sequence, _)) => {
 					if !sequence.is_empty() {
 						sequences.push((slot, sequence));
@@ -684,6 +744,7 @@ impl File {
 
 		// Parse animation sequences in raw mode
 		let mut sequences = Vec::new();
+		let slot_windows = compute_slot_windows(&index_table, data.len());
 
 		for (slot, &word_offset_value) in index_table.iter().enumerate() {
 			// 0xFFFF means no animation in this slot
@@ -691,16 +752,12 @@ impl File {
 				continue;
 			}
 
-			// Convert WORD offset to byte offset
-			let byte_offset = word_offset_value as usize * 2;
-			let data_offset = constants::ANIMATION_DATA_OFFSET + byte_offset;
-
-			if data_offset >= data.len() {
-				continue; // Invalid offset, skip
-			}
+			let Some(window) = slot_windows[slot] else {
+				continue;
+			};
 
 			// Parse sequence in raw mode (without simulating jumps)
-			match AnimationSequence::from_bytes_raw(&data[data_offset..]) {
+			match AnimationSequence::from_bytes_raw(&data[window.start..window.end]) {
 				Ok((sequence, _)) => {
 					if !sequence.is_empty() {
 						sequences.push((slot, sequence));
@@ -966,13 +1023,13 @@ mod tests {
 		let mut seq1 = AnimationSequence::new();
 		seq1.add_frame(FrameDescriptor::frame(1, 10));
 		seq1.add_frame(FrameDescriptor::frame(2, 20));
-		seq1.add_end_marker();
+		seq1.add_hold_marker();
 		file.set_sequence(0, seq1).unwrap();
 
 		// Create second animation: 1 frame = 4 bytes
 		let mut seq2 = AnimationSequence::new();
 		seq2.add_frame(FrameDescriptor::frame(3, 30));
-		seq2.add_end_marker();
+		seq2.add_hold_marker();
 		file.set_sequence(1, seq2).unwrap();
 
 		let bytes = file.to_bytes();
@@ -983,7 +1040,7 @@ mod tests {
 
 		assert_eq!(index_0, 0x0000, "First animation at WORD offset 0");
 
-		// First animation: 2 frames (8 bytes) + end marker (4 bytes) = 12 bytes = 6 words
+		// First animation: 2 frames (8 bytes) + hold marker (4 bytes) = 12 bytes = 6 words
 		assert_eq!(index_1, 0x0006, "Second animation at WORD offset 6 (12 bytes / 2)");
 
 		// Verify byte positions
@@ -997,18 +1054,35 @@ mod tests {
 	}
 
 	#[test]
+	fn test_slot_windows_split_regions() {
+		let mut table = [constants::NO_ANIMATION; constants::ANIMATION_SLOT_COUNT];
+		table[0] = 0; // start of data region
+		table[1] = 6; // 12 bytes after slot 0
+		let file_len = constants::ANIMATION_DATA_OFFSET + 32;
+
+		let windows = compute_slot_windows(&table, file_len);
+		let slot0 = windows[0].expect("slot 0 window exists");
+		let slot1 = windows[1].expect("slot 1 window exists");
+
+		assert_eq!(slot0.start, constants::ANIMATION_DATA_OFFSET);
+		assert_eq!(slot0.end, constants::ANIMATION_DATA_OFFSET + 12);
+		assert_eq!(slot1.start, constants::ANIMATION_DATA_OFFSET + 12);
+		assert_eq!(slot1.end, file_len);
+	}
+
+	#[test]
 	fn test_index_table_rebuilds_after_removal() {
 		let mut file = File::new();
 
 		let mut seq0 = AnimationSequence::new();
 		seq0.add_frame(FrameDescriptor::frame(10, 5));
 		seq0.add_frame(FrameDescriptor::frame(11, 5));
-		seq0.add_end_marker();
+		seq0.add_hold_marker();
 		file.set_sequence(0, seq0).unwrap();
 
 		let mut seq5 = AnimationSequence::new();
 		seq5.add_frame(FrameDescriptor::frame(20, 5));
-		seq5.add_end_marker();
+		seq5.add_hold_marker();
 		file.set_sequence(5, seq5).unwrap();
 
 		let table = file.index_table();
@@ -1034,7 +1108,7 @@ mod tests {
 		seq1.add_frame(FrameDescriptor::frame(1, 1));
 		seq1.add_frame(FrameDescriptor::frame(2, 1));
 		seq1.add_frame(FrameDescriptor::frame(3, 1));
-		seq1.add_end_marker();
+		seq1.add_hold_marker();
 		file.set_sequence(0, seq1).unwrap();
 
 		// 1 frame = 4 bytes, + end = 8 bytes = 4 words
@@ -1052,7 +1126,7 @@ mod tests {
 		seq_for_odd.add_frame(FrameDescriptor::frame(11, 5));
 		seq_for_odd.add_frame(FrameDescriptor::frame(12, 5));
 		seq_for_odd.add_frame(FrameDescriptor::frame(13, 5));
-		seq_for_odd.add_end_marker(); // This adds 4 bytes + may add padding
+		seq_for_odd.add_hold_marker(); // This adds 4 bytes + may add padding
 
 		let _seq_bytes = seq_for_odd.to_bytes();
 		// Sequences are always multiples of 4 bytes, so we'll get even word offsets
@@ -1118,7 +1192,7 @@ mod tests {
 		data[0x22D] = 0x00;
 		data[0x22E] = 0x02; // duration = 2
 		data[0x22F] = 0x00;
-		data[0x230] = 0xFF; // end marker
+		data[0x230] = 0xFF; // hold marker
 		data[0x231] = 0xFF;
 
 		// Animation data at 0x220 + 0x12 = 0x232 (slot 1)
@@ -1130,7 +1204,7 @@ mod tests {
 		data[0x237] = 0x00;
 		data[0x238] = 0x02; // duration = 2
 		data[0x239] = 0x00;
-		data[0x23A] = 0xFF; // end marker
+		data[0x23A] = 0xFF; // hold marker
 		data[0x23B] = 0xFF;
 
 		// Parse the file
@@ -1202,7 +1276,7 @@ mod tests {
 			for i in 0..3 {
 				seq.add_frame(FrameDescriptor::frame(slot as u16 * 10 + i, 5));
 			}
-			seq.add_end_marker();
+			seq.add_hold_marker();
 			file.set_sequence(slot, seq).unwrap();
 		}
 
@@ -1299,7 +1373,7 @@ mod tests {
 		seq.add_frame(FrameDescriptor::frame(2, 20));
 		seq.add_frame(FrameDescriptor::event(3));
 		seq.add_frame(FrameDescriptor::jump(1)); // Jump back to frame 1
-		seq.add_end_marker();
+		seq.add_hold_marker();
 		file.set_sequence(0, seq).unwrap();
 
 		// Serialize to bytes
@@ -1329,8 +1403,8 @@ mod tests {
 			"Raw mode should preserve jump instruction at position 5"
 		);
 
-		// Verify raw mode has end marker at position 6
-		assert!(raw_seq.frames()[6].is_end(), "Raw mode should have end marker at position 6");
+		// Verify raw mode has hold marker at position 6
+		assert!(raw_seq.frames()[6].is_hold(), "Raw mode should have hold marker at position 6");
 	}
 
 	#[test]
@@ -1346,7 +1420,7 @@ mod tests {
 		seq.add_frame(FrameDescriptor::sound(10));
 		seq.add_frame(FrameDescriptor::event(20));
 		seq.add_frame(FrameDescriptor::frame(1, 5));
-		seq.add_end_marker();
+		seq.add_hold_marker();
 		file.set_sequence(5, seq).unwrap();
 
 		let bytes = file.to_bytes();
@@ -1363,6 +1437,6 @@ mod tests {
 		assert!(raw_seq.frames()[1].is_sound());
 		assert!(raw_seq.frames()[2].is_event());
 		assert!(raw_seq.frames()[3].is_frame());
-		assert!(raw_seq.frames()[4].is_end());
+		assert!(raw_seq.frames()[4].is_hold());
 	}
 }

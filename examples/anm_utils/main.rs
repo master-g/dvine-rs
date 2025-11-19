@@ -13,7 +13,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use dvine_rs::prelude::file::anm::{
-	AnimationSequence, File as AnmFile, ParseConfig, constants, sequence::SequenceParseStats,
+	AnimationSequence, File as AnmFile, ParseConfig, compute_slot_windows, constants,
+	sequence::SequenceParseStats,
 };
 use walkdir::WalkDir;
 
@@ -62,11 +63,11 @@ struct ValidateArgs {
 	fail_on_warning: bool,
 
 	/// Maximum number of simulated parser iterations before assuming a loop
-	#[arg(long, value_name = "COUNT", default_value_t = 1000)]
+	#[arg(long, value_name = "COUNT", default_value_t = 5000)]
 	max_iterations: usize,
 
 	/// Maximum visits per frame index before stopping
-	#[arg(long, value_name = "COUNT", default_value_t = 10)]
+	#[arg(long, value_name = "COUNT", default_value_t = 128)]
 	max_visits_per_index: usize,
 }
 
@@ -85,11 +86,11 @@ struct InspectArgs {
 	verbose: bool,
 
 	/// Maximum number of simulated parser iterations before assuming a loop
-	#[arg(long, value_name = "COUNT", default_value_t = 1000)]
+	#[arg(long, value_name = "COUNT", default_value_t = 5000)]
 	max_iterations: usize,
 
 	/// Maximum visits per frame index before stopping
-	#[arg(long, value_name = "COUNT", default_value_t = 10)]
+	#[arg(long, value_name = "COUNT", default_value_t = 128)]
 	max_visits_per_index: usize,
 }
 
@@ -161,7 +162,10 @@ fn run_inspect(args: InspectArgs) -> Result<()> {
 		report.warning_slots(),
 		report.error_slots()
 	);
-	println!("Simulated frame count: {}", report.frames_total);
+	println!(
+		"Simulated frames: {} | bytes≈{} | slots exhausted: {}",
+		report.frames_total, report.bytes_total, report.slots_exhausted
+	);
 
 	let mut slots: Vec<&SlotSummary> = match args.slot {
 		Some(idx) => report.slot_reports.iter().filter(|summary| summary.slot == idx).collect(),
@@ -229,6 +233,9 @@ fn validate_file(path: &Path, config: &ParseConfig) -> Result<FileReport> {
 	let mut slot_reports = Vec::new();
 	let mut severity = Severity::Ok;
 	let mut frames_total = 0usize;
+	let mut bytes_total = 0usize;
+	let mut slots_exhausted = 0usize;
+	let slot_windows = compute_slot_windows(anm.index_table(), bytes.len());
 
 	for (slot, &word_offset) in anm.index_table().iter().enumerate() {
 		if word_offset == constants::NO_ANIMATION {
@@ -238,48 +245,56 @@ fn validate_file(path: &Path, config: &ParseConfig) -> Result<FileReport> {
 		let byte_offset = constants::ANIMATION_DATA_OFFSET + (word_offset as usize * 2);
 		let mut summary = SlotSummary::new(slot, word_offset, byte_offset);
 
-		if byte_offset + constants::FRAME_DESCRIPTOR_SIZE > bytes.len() {
+		let Some(window) = slot_windows[slot] else {
 			summary.add_error(format!(
 				"Slot offset 0x{byte_offset:05X} exceeds file length ({} bytes)",
 				bytes.len()
 			));
-		} else {
-			let slice = &bytes[byte_offset..];
+			severity.escalate(summary.severity);
+			slot_reports.push(summary);
+			continue;
+		};
 
-			match AnimationSequence::from_bytes_with_config(slice, config) {
-				Ok((sequence, stats)) => {
-					summary.frames = sequence.len();
-					summary.stats = Some(stats);
-					frames_total += sequence.len();
+		if window.len() < constants::FRAME_DESCRIPTOR_SIZE {
+			summary.add_error(format!("Slot data window is too small ({} bytes)", window.len()));
+			severity.escalate(summary.severity);
+			slot_reports.push(summary);
+			continue;
+		}
 
-					if stats.loop_detected {
-						summary.add_warning(format!(
-							"Loop guard triggered after visiting {} unique positions",
-							stats.unique_frame_positions
-						));
-					}
+		let slice = &bytes[window.start..window.end];
 
-					if !stats.terminated_by_end_marker {
-						summary.add_warning(
-							"Parser stopped without encountering an END marker".to_string(),
-						);
-					}
+		match AnimationSequence::from_bytes_with_config(slice, config) {
+			Ok((sequence, stats)) => {
+				summary.frames = sequence.len();
+				summary.stats = Some(stats);
+				frames_total += sequence.len();
+				bytes_total += stats.bytes_consumed;
+				if stats.exhausted_data_window {
+					slots_exhausted += 1;
 				}
-				Err(err) => {
-					summary.add_error(format!("Simulated parser failed: {err}"));
+
+				if stats.loop_detected {
+					summary.add_warning(format!(
+						"Loop guard triggered after visiting {} unique positions",
+						stats.unique_frame_positions
+					));
 				}
 			}
+			Err(err) => {
+				summary.add_error(format!("Simulated parser failed: {err}"));
+			}
+		}
 
-			match AnimationSequence::from_bytes_raw(slice) {
-				Ok((raw_sequence, raw_bytes)) => {
-					if summary.frames == 0 {
-						summary.frames = raw_sequence.len();
-					}
-					summary.raw_bytes = Some(raw_bytes);
+		match AnimationSequence::from_bytes_raw(slice) {
+			Ok((raw_sequence, raw_bytes)) => {
+				if summary.frames == 0 {
+					summary.frames = raw_sequence.len();
 				}
-				Err(err) => {
-					summary.add_error(format!("Raw reader failed: {err}"));
-				}
+				summary.raw_bytes = Some(raw_bytes);
+			}
+			Err(err) => {
+				summary.add_error(format!("Raw reader failed: {err}"));
 			}
 		}
 
@@ -293,6 +308,8 @@ fn validate_file(path: &Path, config: &ParseConfig) -> Result<FileReport> {
 		spr_filename: anm.spr_filename().to_string(),
 		file_size: bytes.len(),
 		frames_total,
+		bytes_total,
+		slots_exhausted,
 	})
 }
 
@@ -303,12 +320,15 @@ fn print_file_report(report: &FileReport, path: &Path, root: Option<&Path>, verb
 		.unwrap_or_else(|| path.display().to_string());
 
 	println!(
-		"{} {:<50} | slots {:3} warn {:2} err {:2} | spr {}",
+		"{} {:<50} | slots {:3} warn {:2} err {:2} | frames {:5} bytes {:7} exh {:3} | spr {}",
 		report.severity.icon(),
 		rel,
 		report.active_slots(),
 		report.warning_slots(),
 		report.error_slots(),
+		report.frames_total,
+		report.bytes_total,
+		report.slots_exhausted,
 		if report.spr_filename.is_empty() {
 			"<unset>"
 		} else {
@@ -316,13 +336,19 @@ fn print_file_report(report: &FileReport, path: &Path, root: Option<&Path>, verb
 		}
 	);
 
+	let mut printed_details = false;
 	if verbose || report.severity != Severity::Ok {
 		for slot in &report.slot_reports {
 			if !verbose && slot.severity == Severity::Ok {
 				continue;
 			}
+			printed_details = true;
 			print_slot_details(slot, "    ", verbose);
 		}
+	}
+
+	if printed_details {
+		println!();
 	}
 }
 
@@ -338,10 +364,10 @@ fn print_slot_details(slot: &SlotSummary, indent: &str, include_clean_note: bool
 
 	if let Some(stats) = slot.stats {
 		println!(
-			"{indent}    stats: unique_positions={} bytes≈{} end={} loop={}",
+			"{indent}    stats: unique_positions={} bytes={} window_exhausted={} loop={}",
 			stats.unique_frame_positions,
 			stats.bytes_consumed,
-			stats.terminated_by_end_marker,
+			stats.exhausted_data_window,
 			stats.loop_detected
 		);
 	}
@@ -364,7 +390,7 @@ fn print_slot_details(slot: &SlotSummary, indent: &str, include_clean_note: bool
 
 fn print_summary(totals: &ScanTotals) {
 	println!(
-		"\nSummary: files={} | ok={} warn={} err={} | slots={} warn={} err={} | frames={}",
+		"\nSummary: files={} | ok={} warn={} err={} | slots={} warn={} err={} exhausted={} | frames={} bytes≈{}",
 		totals.files_total,
 		totals.files_ok,
 		totals.files_warning,
@@ -372,7 +398,9 @@ fn print_summary(totals: &ScanTotals) {
 		totals.slots,
 		totals.warning_slots,
 		totals.error_slots,
-		totals.frames
+		totals.slots_exhausted,
+		totals.frames,
+		totals.bytes
 	);
 }
 
@@ -386,6 +414,8 @@ struct ScanTotals {
 	warning_slots: usize,
 	error_slots: usize,
 	frames: usize,
+	bytes: usize,
+	slots_exhausted: usize,
 }
 
 impl ScanTotals {
@@ -395,6 +425,8 @@ impl ScanTotals {
 		self.warning_slots += report.warning_slots();
 		self.error_slots += report.error_slots();
 		self.frames += report.frames_total;
+		self.bytes += report.bytes_total;
+		self.slots_exhausted += report.slots_exhausted;
 
 		match report.severity {
 			Severity::Ok => self.files_ok += 1,
@@ -415,6 +447,8 @@ struct FileReport {
 	spr_filename: String,
 	file_size: usize,
 	frames_total: usize,
+	bytes_total: usize,
+	slots_exhausted: usize,
 }
 
 impl FileReport {
